@@ -65,6 +65,9 @@ interface AdminApi {
     @POST("brain/google")
     suspend fun google(@Body body: BrainGoogleBody): BrainGoogleResp
 
+    @POST("brain/utterance")
+    suspend fun utterance(@Body body: BrainUtteranceBody): BrainUtteranceResp
+
     @GET("hermes/voice-profile")
     suspend fun voiceProfile(): Map<String, Any?>
 }

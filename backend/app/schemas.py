@@ -192,6 +192,35 @@ class BrainGoogleResponse(BaseModel):
     raw_output: str | None = None
 
 
+class BrainUtteranceRequest(BaseModel):
+    text: str = Field(min_length=2, max_length=4000)
+    confirm: bool = False
+    thread_id: uuid.UUID | None = None
+    wait_timeout_seconds: int = Field(
+        default=60,
+        ge=0,
+        le=300,
+        description="Segundos para aguardar respostas de comandos de dispositivo.",
+    )
+
+
+class BrainUtteranceResponse(BaseModel):
+    kind: str
+    thread_id: uuid.UUID | None = None
+    status: str
+    message: str
+    summary: str | None = None
+    requires_confirmation: bool = False
+    service: str | None = None
+    action: str | None = None
+    data: dict[str, Any] | list[dict[str, Any]] | list[Any] | dict[str, Any] | None = None
+    raw_output: str | None = None
+    command_id: uuid.UUID | None = None
+    device_name: str | None = None
+    command_type: str | None = None
+    result: dict[str, Any] | None = None
+
+
 class BrainContextResponse(BaseModel):
     thread: ConversationThreadEntry | None = None
     recent_threads: list[ConversationThreadEntry] = Field(default_factory=list)

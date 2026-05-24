@@ -21,6 +21,8 @@ from app.schemas import (
     BrainCommandRequest,
     BrainGoogleRequest,
     BrainGoogleResponse,
+    BrainUtteranceRequest,
+    BrainUtteranceResponse,
     BrainContextResponse,
     BrainCommandResponse,
     BrainRawCommandRequest,
@@ -37,26 +39,16 @@ def _google_confirmation_prompt(action: RoutedGoogleAction) -> str:
     return f"Confirme a ação Google {action.service}.{action.action} com estes parâmetros: {action.params}"
 
 
-@router.post("/google", response_model=BrainGoogleResponse)
-def brain_google(
-    body: BrainGoogleRequest,
-    db: Session = Depends(get_db),
-    actor: User = Depends(get_brain_or_admin),
+def _execute_google_action(
+    *,
+    db: Session,
+    actor: User,
+    thread: ConversationThread,
+    action: RoutedGoogleAction,
+    confirm: bool,
 ) -> BrainGoogleResponse:
-    try:
-        action = route_google_natural(body.text)
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-
-    thread = db.get(ConversationThread, body.thread_id) if body.thread_id is not None else None
-    if thread is None:
-        thread = get_recent_thread(db, "user", str(actor.id))
-    if thread is None:
-        thread = ConversationThread(actor_type="user", actor_id=str(actor.id), origin_channel="brain", subject=body.text[:60])
-        db.add(thread)
-        db.flush()
-
-    if action.confirmation_required and not body.confirm:
+    if action.confirmation_required and not confirm:
+        prompt = _google_confirmation_prompt(action)
         record_thread_event(
             db,
             thread,
@@ -66,7 +58,7 @@ def brain_google(
                 "action": action.action,
                 "params": action.params,
             },
-            summary=_google_confirmation_prompt(action),
+            summary=prompt,
         )
         write_audit(
             db,
@@ -78,7 +70,7 @@ def brain_google(
                     "service": action.service,
                     "action": action.action,
                     "params": action.params,
-                    "summary": _google_confirmation_prompt(action),
+                    "summary": prompt,
                 }
             ),
         )
@@ -88,14 +80,14 @@ def brain_google(
             service=action.service,
             action=action.action,
             status="needs_confirmation",
-            message=_google_confirmation_prompt(action),
+            message=prompt,
             requires_confirmation=True,
-            summary=_google_confirmation_prompt(action),
+            summary=prompt,
             data=None,
         )
 
     try:
-        result = run_google_workspace(action.service, action.action, action.params, confirm=body.confirm)
+        result = run_google_workspace(action.service, action.action, action.params, confirm=confirm)
     except GoogleWorkspaceError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
@@ -108,7 +100,7 @@ def brain_google(
             {
                 "service": action.service,
                 "action": action.action,
-                "confirm": body.confirm,
+                "confirm": confirm,
                 "destructive": is_destructive(action.service, action.action),
                 "summary": result.summary,
             }
@@ -121,7 +113,7 @@ def brain_google(
         payload={
             "service": action.service,
             "action": action.action,
-            "confirm": body.confirm,
+            "confirm": confirm,
             "summary": result.summary,
         },
         summary=result.summary,
@@ -137,6 +129,106 @@ def brain_google(
         summary=result.summary,
         data=result.data if isinstance(result.data, (dict, list)) else None,
         raw_output=result.raw_output,
+    )
+
+
+def _ensure_thread(db: Session, actor: User, body_text: str, thread_id: uuid.UUID | None) -> ConversationThread:
+    thread = db.get(ConversationThread, thread_id) if thread_id is not None else None
+    if thread is None:
+        thread = get_recent_thread(db, "user", str(actor.id))
+    if thread is None:
+        thread = ConversationThread(actor_type="user", actor_id=str(actor.id), origin_channel="brain", subject=body_text[:60])
+        db.add(thread)
+        db.flush()
+    return thread
+
+
+@router.post("/google", response_model=BrainGoogleResponse)
+def brain_google(
+    body: BrainGoogleRequest,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_brain_or_admin),
+) -> BrainGoogleResponse:
+    try:
+        action = route_google_natural(body.text)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    thread = _ensure_thread(db, actor, body.text, body.thread_id)
+    return _execute_google_action(db=db, actor=actor, thread=thread, action=action, confirm=body.confirm)
+
+
+@router.post("/utterance", response_model=BrainUtteranceResponse)
+def brain_utterance(
+    body: BrainUtteranceRequest,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_brain_or_admin),
+) -> BrainUtteranceResponse:
+    thread = _ensure_thread(db, actor, body.text, body.thread_id)
+    record_thread_event(
+        db,
+        thread,
+        kind="voice_utterance_received",
+        payload={"text": body.text, "confirm": body.confirm},
+        summary=body.text[:120],
+    )
+    try:
+        action = route_google_natural(body.text)
+    except ValueError:
+        try:
+            natural = create_natural_command(
+                NaturalCommandRequest(
+                    text=body.text,
+                    thread_id=thread.id,
+                    notify_channel="voice",
+                    notify_on="done",
+                ),
+                db,
+                actor,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+        cmd = db.get(Command, natural.command.id)
+        if cmd is None:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Comando não encontrado após criação")
+        if body.wait_timeout_seconds > 0:
+            cmd = wait_for_command(db, cmd.id, timeout_seconds=body.wait_timeout_seconds)
+
+        message = format_command_result_message(
+            device_name=natural.parsed_device_name,
+            command_type=natural.parsed_type,
+            status=cmd.status,
+            result=cmd.result,
+            logs=cmd.logs,
+        )
+        return BrainUtteranceResponse(
+            kind="command",
+            thread_id=natural.thread_id,
+            status=cmd.status,
+            message=message,
+            summary=message,
+            requires_confirmation=False,
+            command_id=cmd.id,
+            device_name=natural.parsed_device_name,
+            command_type=natural.parsed_type,
+            result=cmd.result,
+        )
+
+    google = _execute_google_action(db=db, actor=actor, thread=thread, action=action, confirm=body.confirm)
+    return BrainUtteranceResponse(
+        kind="google",
+        thread_id=google.thread_id,
+        status=google.status,
+        message=google.message,
+        summary=google.summary,
+        requires_confirmation=google.requires_confirmation,
+        service=google.service,
+        action=google.action,
+        data=google.data,
+        raw_output=google.raw_output,
     )
 
 

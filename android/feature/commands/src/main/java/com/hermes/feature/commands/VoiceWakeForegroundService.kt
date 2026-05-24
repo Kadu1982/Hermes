@@ -31,11 +31,18 @@ import kotlinx.coroutines.launch
  */
 class VoiceWakeForegroundService : Service() {
 
+    private data class PendingVoiceAction(
+        val text: String,
+        val threadId: String?,
+        val kind: String,
+    )
+
     private val scope = CoroutineScope(Dispatchers.Default + Job())
     private var processingCommand = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private var speechRecognizer: SpeechRecognizer? = null
     private var listening = false
+    private var pendingVoiceAction: PendingVoiceAction? = null
     private lateinit var store: SecureTokenStore
 
     override fun onCreate() {
@@ -77,7 +84,7 @@ class VoiceWakeForegroundService : Service() {
         )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Jarvis à escuta")
-            .setContentText("Diga: «Ei Jarvis, ping no PC» ou «Jarvis, diga olá»")
+            .setContentText("Diga: «Ei Jarvis, envia um e-mail» ou «Ei Jarvis, marca reunião»")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Parar", stopIntent)
             .setOngoing(true)
@@ -143,21 +150,64 @@ class VoiceWakeForegroundService : Service() {
 
     private fun handleUtterance(spoken: String) {
         val cmd = WakePhraseParser.parse(spoken) ?: return
+        val normalized = cmd.trim().lowercase()
+        if (pendingVoiceAction == null && normalized in setOf("confirmar", "confirmo", "sim", "pode", "pode fazer", "executar", "cancelar", "cancela", "não", "nao", "parar", "stop")) {
+            scope.launch {
+                JarvisTts.speakBlocking(applicationContext, "Não há confirmação pendente, senhor.", 6)
+            }
+            updateNotification("Sem confirmação pendente")
+            return
+        }
+        if (pendingVoiceAction != null) {
+            when {
+                normalized in setOf("confirmar", "confirmo", "sim", "pode", "pode fazer", "executar") -> {
+                    handleCommand(pendingVoiceAction!!.text, confirm = true, threadId = pendingVoiceAction!!.threadId)
+                    return
+                }
+                normalized in setOf("cancelar", "cancela", "não", "nao", "parar", "stop") -> {
+                    pendingVoiceAction = null
+                    updateNotification("Confirmação cancelada")
+                    scope.launch {
+                        JarvisTts.speakBlocking(applicationContext, "Certo, senhor. Cancelado.", 6)
+                    }
+                    return
+                }
+            }
+        }
         handleCommand(cmd)
     }
 
-    private fun handleCommand(command: String) {
+    private fun handleCommand(command: String, confirm: Boolean = false, threadId: String? = null) {
         if (processingCommand) return
         processingCommand = true
         scope.launch {
-            JarvisTts.speakBlocking(applicationContext, "Executando, senhor.", 8)
-            val result = NaturalCommandClient.send(applicationContext, command)
+            JarvisTts.speakBlocking(
+                applicationContext,
+                if (confirm) "Confirmando, senhor." else "Executando, senhor.",
+                8,
+            )
+            val result = BrainVoiceClient.send(
+                applicationContext,
+                command,
+                confirm = confirm,
+                threadId = threadId,
+            )
             result.fold(
-                onSuccess = { msg ->
-                    JarvisTts.speakBlocking(applicationContext, "Concluído, senhor.", 6)
-                    updateNotification("Último: $msg")
+                onSuccess = { resp ->
+                    if (resp.requires_confirmation) {
+                        pendingVoiceAction = PendingVoiceAction(command, resp.thread_id, resp.kind)
+                        val prompt = resp.summary ?: resp.message
+                        JarvisTts.speakBlocking(applicationContext, prompt, 8)
+                        updateNotification("Aguardando confirmação: $prompt")
+                    } else {
+                        pendingVoiceAction = null
+                        val summary = resp.summary ?: resp.message
+                        JarvisTts.speakBlocking(applicationContext, summary, 6)
+                        updateNotification("Último: $summary")
+                    }
                 },
                 onFailure = { e ->
+                    pendingVoiceAction = null
                     val err = e.message ?: "erro"
                     JarvisTts.speakBlocking(
                         applicationContext,

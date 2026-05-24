@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 
@@ -53,6 +54,52 @@ def _gmail_query(text: str) -> str:
     return " ".join(query_parts) or "in:inbox"
 
 
+def _segment_after(text: str, marker: str, stop_markers: tuple[str, ...] = ()) -> str:
+    lower = text.lower()
+    idx = lower.find(marker.lower())
+    if idx < 0:
+        return ""
+    start = idx + len(marker)
+    tail = text[start:]
+    lower_tail = lower[start:]
+    end = len(tail)
+    for stop in stop_markers:
+        stop_idx = lower_tail.find(stop.lower())
+        if stop_idx >= 0:
+            end = min(end, stop_idx)
+    return tail[:end].strip(" ,;:-")
+
+
+def _calendar_datetime_range(text: str) -> tuple[str, str]:
+    now = datetime.now().astimezone()
+    lower = text.lower()
+    delta_days = 0
+    if "depois de amanhã" in lower or "depois de amanha" in lower:
+        delta_days = 2
+    elif "amanhã" in lower or "amanha" in lower:
+        delta_days = 1
+
+    date_match = re.search(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{4}))?\b", lower)
+    if date_match:
+        day = int(date_match.group(1))
+        month = int(date_match.group(2))
+        year = int(date_match.group(3) or now.year)
+        target_date = datetime(year, month, day, tzinfo=now.tzinfo).date()
+    else:
+        target_date = (now + timedelta(days=delta_days)).date()
+
+    time_match = re.search(r"\b(?:às|as)?\s*(\d{1,2})(?::(\d{2}))?\s*h?\b", lower)
+    hour = int(time_match.group(1)) if time_match else 9
+    minute = int(time_match.group(2) or 0) if time_match else 0
+    start = datetime(target_date.year, target_date.month, target_date.day, hour, minute, tzinfo=now.tzinfo)
+
+    duration_minutes = 30 if "meia hora" in lower or "30 minutos" in lower else 60
+    if "2 horas" in lower or "duas horas" in lower:
+        duration_minutes = 120
+    end = start + timedelta(minutes=duration_minutes)
+    return start.isoformat(), end.isoformat()
+
+
 def route_google_natural(text: str) -> RoutedGoogleAction:
     raw = text.strip()
     if not raw:
@@ -62,12 +109,27 @@ def route_google_natural(text: str) -> RoutedGoogleAction:
     confirmation_required = bool(_DELETE.search(raw) or _SHARE.search(raw))
 
     if _GMAIL.search(raw):
-        if _CREATE.search(raw) or any(term in lower for term in ["enviar", "send", "responder", "reply"]):
+        if _CREATE.search(raw) or any(term in lower for term in ["enviar", "send", "mandar", "mande", "envie", "responder", "reply"]):
+            to = _segment_after(raw, "para", (" assunto", " sobre", " com assunto", " dizendo", " diga ", " mensagem", " texto", " corpo"))
+            subject = _segment_after(raw, "assunto", (" e mensagem", " mensagem", " e texto", " texto", " e corpo", " corpo", " dizendo", " sobre"))
+            body = _segment_after(raw, "mensagem", (" assunto",))
+            if not body:
+                body = _segment_after(raw, "texto", (" assunto",))
+            if not body:
+                body = _segment_after(raw, "corpo", (" assunto",))
+            if not body:
+                body = _segment_after(raw, "dizendo", ())
+            if not body:
+                body = _strip_helpers(raw)
+            if not subject:
+                subject = "Mensagem do Hermes"
+            if not to:
+                to = _segment_after(raw, "pro", (" assunto", " sobre", " mensagem", " texto", " corpo"))
             action = "send"
             params: dict[str, Any] = {
-                "to": "",
-                "subject": "",
-                "body": raw,
+                "to": to,
+                "subject": subject,
+                "body": body,
             }
             confidence = "low"
         elif _SEARCH.search(raw) or any(term in lower for term in ["não lidos", "nao lidos", "unread"]):
@@ -94,11 +156,23 @@ def route_google_natural(text: str) -> RoutedGoogleAction:
                 "low",
                 True,
             )
-        if _CREATE.search(raw):
+        if _CREATE.search(raw) or any(term in lower for term in ["marque", "agende", "agenda", "marcar", "agendar"]):
+            start, end = _calendar_datetime_range(raw)
+            summary = _segment_after(raw, "criar", (" amanhã", " amanha", " hoje", " às", " as "))
+            if not summary:
+                summary = _segment_after(raw, "agendar", (" amanhã", " amanha", " hoje", " às", " as "))
+            if not summary:
+                summary = _segment_after(raw, "marcar", (" amanhã", " amanha", " hoje", " às", " as "))
+            if not summary:
+                summary = _segment_after(raw, "agende", (" amanhã", " amanha", " hoje", " às", " as "))
+            if not summary:
+                summary = _segment_after(raw, "marque", (" amanhã", " amanha", " hoje", " às", " as "))
+            if not summary:
+                summary = raw
             return RoutedGoogleAction(
                 "calendar",
                 "create",
-                {"summary": raw, "start": "", "end": "", "calendar": "primary"},
+                {"summary": summary, "start": start, "end": end, "calendar": "primary"},
                 "low",
                 False,
             )
