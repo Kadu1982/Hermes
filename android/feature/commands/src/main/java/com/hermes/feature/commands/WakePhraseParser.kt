@@ -7,23 +7,16 @@ package com.hermes.feature.commands
 object WakePhraseParser {
     private val WAKE_PHRASES = listOf(
         "ei jarvis",
-        "oi jarvis",
-        "hey jarvis",
-        "ei hermes",
-        "oi hermes",
-        "ok jarvis",
-        "ok hermes",
-        "jarvis",
-        "hermes",
+        "ei javrvis",
+        "javrvis",
     ).sortedByDescending { it.length }
 
     fun parse(spoken: String): String? {
         val lower = spoken.lowercase().trim()
         if (lower.isEmpty()) return null
         for (wake in WAKE_PHRASES) {
-            val idx = lower.indexOf(wake)
-            if (idx < 0) continue
-            var rest = lower.substring(idx + wake.length).trim()
+            if (!lower.startsWith(wake)) continue
+            var rest = lower.substring(wake.length).trim()
             rest = rest.trimStart(',', ':', '-', ' ')
             if (rest.isNotEmpty()) return rest
         }
