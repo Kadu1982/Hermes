@@ -262,7 +262,6 @@ class VoiceWakeForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        store.voiceWakeEnabled = false
         speechRecognizer?.destroy()
         scope.cancel()
         super.onDestroy()

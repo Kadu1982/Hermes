@@ -236,7 +236,7 @@ fun CommanderScreen(
                 ) { Text("Confirmar 2FA") }
             }
         } else {
-            Text("Modo voz estilo Alexa")
+            Text("Modo voz Jarvis")
             Text(
                 "Ative e diga: «Ei Jarvis, ping no PC-Casa», «Ei Jarvis, tira uma foto» " +
                     "ou «Ei Jarvis, onde estou» / «Ei Jarvis, me leva para casa». Instale «Speech Recognition & Synthesis from Google» para voz masculina.",
@@ -300,7 +300,7 @@ fun CommanderScreen(
                     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR")
-                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Fale com o Hermes")
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Fale com o Jarvis")
                     }
                     if (intent.resolveActivity(activity.packageManager) != null) {
                         speechLauncher.launch(intent)
@@ -308,7 +308,7 @@ fun CommanderScreen(
                         onStatus("Reconhecimento de voz não disponível neste aparelho")
                     }
                 },
-            ) { Text("Falar com Hermes") }
+            ) { Text("Falar com Jarvis") }
             Button(
                 onClick = {
                     scope.launch {
@@ -343,7 +343,7 @@ fun CommanderScreen(
                 },
             ) { Text("Enviar comando") }
             Text("Google Workspace")
-            Text("Fale com o Hermes para Gmail, Calendar, Drive, Docs e Sheets. A mesma thread fica guardada para aprendizagem.")
+            Text("Fale com o Jarvis para Gmail, Calendar, Drive, Docs e Sheets. A mesma thread fica guardada para aprendizagem.")
             OutlinedTextField(
                 googleText,
                 { googleText = it },

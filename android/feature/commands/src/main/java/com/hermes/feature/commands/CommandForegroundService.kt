@@ -66,11 +66,11 @@ class CommandForegroundService : Service() {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Hermes sync", NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel(CHANNEL_ID, "Jarvis sync", NotificationManager.IMPORTANCE_LOW),
             )
         }
         val n: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Hermes")
+            .setContentTitle("Jarvis")
             .setContentText("Remote admin session active")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .build()

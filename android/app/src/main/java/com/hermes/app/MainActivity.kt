@@ -37,6 +37,7 @@ import com.hermes.feature.commands.CommandBridge
 import com.hermes.feature.commands.CommandForegroundService
 import com.hermes.feature.files.FileTransfer
 import com.hermes.feature.pairing.PairingRepository
+import com.hermes.feature.commands.VoiceWakeForegroundService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -112,8 +113,14 @@ private fun HermesRoot(activity: MainActivity) {
         }
     }
 
+    LaunchedEffect(app.store.voiceWakeEnabled) {
+        if (app.store.voiceWakeEnabled) {
+            VoiceWakeForegroundService.start(activity)
+        }
+    }
+
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { Text("Hermes") }) },
+        topBar = { CenterAlignedTopAppBar(title = { Text("Jarvis") }) },
     ) { padding ->
         Column(Modifier.padding(padding)) {
             Column(
