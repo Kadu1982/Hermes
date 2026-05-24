@@ -17,7 +17,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import ai.picovoice.porcupine.BuiltInKeyword
+import ai.picovoice.porcupine.Porcupine
 import ai.picovoice.porcupine.PorcupineManager
 import com.hermes.core.security.SecureTokenStore
 import kotlinx.coroutines.CoroutineScope
@@ -113,7 +113,7 @@ class VoiceWakeForegroundService : Service() {
         return runCatching {
             val manager = PorcupineManager.Builder()
                 .setAccessKey(accessKey)
-                .setBuiltInKeyword(BuiltInKeyword.JARVIS)
+                .setKeyword(Porcupine.BuiltInKeyword.JARVIS)
                 .setSensitivity(0.5f)
                 .build(applicationContext) { _ ->
                     mainHandler.post { onWakeWordDetected() }
