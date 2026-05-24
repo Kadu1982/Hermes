@@ -28,7 +28,7 @@ router = APIRouter(tags=["commands"])
 
 def _validate_payload(cmd_type: str, payload: dict | None) -> None:
     payload = payload or {}
-    if cmd_type in ("ping", "revoke_local", "noop") and payload:
+    if cmd_type in ("ping", "revoke_local", "noop", "get_location") and payload:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Payload must be empty for this command type")
     if cmd_type == "speak":
         if not payload or not str(payload.get("text", "")).strip():
@@ -36,6 +36,11 @@ def _validate_payload(cmd_type: str, payload: dict | None) -> None:
     if cmd_type == "request_download":
         if not payload.get("file_id"):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "request_download requires file_id")
+    if cmd_type == "take_photo":
+        if set(payload.keys()) - {"archive_only"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "take_photo only accepts archive_only")
+        if payload and "archive_only" in payload and not isinstance(payload["archive_only"], bool):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "take_photo.archive_only must be boolean")
 
 
 @router.post("/devices/{device_id}/commands", response_model=CommandJobAdmin, status_code=status.HTTP_201_CREATED)

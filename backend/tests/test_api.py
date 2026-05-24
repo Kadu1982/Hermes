@@ -1,6 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.command_wait import format_command_result_message
+
 
 def test_health(client: TestClient):
     r = client.get("/healthz")
@@ -219,3 +221,65 @@ def test_natural_command_reuses_recent_context(client: TestClient, admin_user):
     assert body["thread"]["last_intent"] == "ping"
     assert body["thread"]["last_target_device_id"] == pair_a.json()["device_id"]
     assert body["recent_threads"][0]["id"] == thread_id
+
+
+def test_natural_command_routes_photo_and_location(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "phone"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "HermesPhone"},
+    )
+    assert pair.status_code == 201
+    dev_id = pair.json()["device_id"]
+
+    photo = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "Ei Jarvis, tira uma foto no telefone", "device_id": dev_id},
+        headers=headers,
+    )
+    assert photo.status_code == 201
+    assert photo.json()["parsed_type"] == "take_photo"
+    assert photo.json()["command"]["payload"]["archive_only"] is True
+
+    location = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "Ei Jarvis, onde estou no telefone", "device_id": dev_id},
+        headers=headers,
+    )
+    assert location.status_code == 201
+    assert location.json()["parsed_type"] == "get_location"
+
+
+def test_command_wait_formats_photo_and_location_messages():
+    photo = format_command_result_message(
+        device_name="HermesPhone",
+        command_type="take_photo",
+        status="done",
+        result={"archived_path": "/data/user/0/com.hermes.app/files/hermes/photos/p.jpg", "share_requested": True},
+    )
+    assert "arquivada localmente" in photo
+    assert "compartilhamento" in photo
+
+    location = format_command_result_message(
+        device_name="HermesPhone",
+        command_type="get_location",
+        status="done",
+        result={"latitude": -23.5, "longitude": -46.6, "maps_url": "https://maps.example"},
+    )
+    assert "Localização de HermesPhone" in location
+    assert "https://maps.example" in location

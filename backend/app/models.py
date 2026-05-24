@@ -200,6 +200,8 @@ ALLOWED_COMMAND_TYPES = frozenset(
         "revoke_local",
         "noop",
         "speak",
+        "take_photo",
+        "get_location",
         "server_docker_ps",
         "server_disk",
     }

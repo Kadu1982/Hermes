@@ -75,7 +75,12 @@ class CommandForegroundService : Service() {
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFY_ID, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            startForeground(
+                NOTIFY_ID,
+                n,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+            )
         } else {
             startForeground(NOTIFY_ID, n)
         }

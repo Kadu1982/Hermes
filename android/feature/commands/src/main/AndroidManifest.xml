@@ -4,10 +4,23 @@
         <service
             android:name="com.hermes.feature.commands.CommandForegroundService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|location" />
         <service
             android:name="com.hermes.feature.commands.VoiceWakeForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <activity
+            android:name="com.hermes.feature.commands.PhotoCaptureActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.hermes.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/hermes_file_paths" />
+        </provider>
     </application>
 </manifest>

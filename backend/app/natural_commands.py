@@ -13,6 +13,12 @@ _PING = re.compile(r"\b(ping|teste|testar|conectividade)\b", re.I)
 _INVENTORY = re.compile(r"\b(invent[aá]rio|inventory|status|informa[cç][aã]o)\b", re.I)
 _UPLOAD = re.compile(r"\b(enviar|upload|mandar)\s+(arquivo|ficheiro|file)\b", re.I)
 _SPEAK = re.compile(r"\b(diga|dizer|fale|falar|repete|repita|say|speak)\b", re.I)
+_PHOTO = re.compile(r"\b(foto|fotografia|picture|image|imagem|captura|capturar|tirar|tira)\b", re.I)
+_LOCATION = re.compile(
+    r"\b(localiza[cç][aã]o|geolocaliza[cç][aã]o|gps|onde\s+(estou|estamos)|minha\s+localiza[cç][aã]o|manda\s+minha\s+localiza[cç][aã]o)\b",
+    re.I,
+)
+_SEND_PHOTO = re.compile(r"\b(enviar|manda?r|compartilha?r|share)\s+(a\s+)?foto\b", re.I)
 _GREETING = re.compile(r"\b(ol[aá]|oi|hello|hi|bom\s+dia|boa\s+noite)\b", re.I)
 _SERVER = re.compile(r"\b(vps|servidor|server)\b", re.I)
 _PHONE = re.compile(r"\b(telefone|phone|celular|galaxy|android|s25|telem[oó]vel)\b", re.I)
@@ -93,6 +99,11 @@ def parse_natural_command(db: Session, text: str, explicit_device_id: uuid.UUID 
         cmd_type, payload = "get_inventory", None
     elif _UPLOAD.search(text):
         cmd_type, payload = "request_upload", {}
+    elif _PHOTO.search(text):
+        payload = {"archive_only": not bool(_SEND_PHOTO.search(text))}
+        cmd_type = "take_photo"
+    elif _LOCATION.search(text):
+        cmd_type, payload = "get_location", {}
     elif _SPEAK.search(text) or (_GREETING.search(text) and not _PING.search(text)):
         cmd_type = "speak"
         payload = {"text": _extract_speak_text(text)}
@@ -101,7 +112,8 @@ def parse_natural_command(db: Session, text: str, explicit_device_id: uuid.UUID 
     else:
         raise ValueError(
             "Não entendi o pedido. Exemplos: 'diga olá', 'ping no PC-Casa', "
-            "'inventário do VPS', 'fale boa noite no telefone'."
+            "'inventário do VPS', 'fale boa noite no telefone', "
+            "'tira uma foto', 'onde estou'."
         )
     return ParsedNaturalCommand(
         device_id=device.id,

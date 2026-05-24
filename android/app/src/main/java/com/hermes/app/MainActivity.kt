@@ -46,6 +46,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val runtimePermissions = mutableListOf(
             android.Manifest.permission.ACCESS_NETWORK_STATE,
+            android.Manifest.permission.CAMERA,
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             runtimePermissions += android.Manifest.permission.POST_NOTIFICATIONS

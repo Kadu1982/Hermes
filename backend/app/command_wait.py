@@ -85,4 +85,23 @@ def format_command_result_message(
     if command_type == "speak":
         return f"Falado em {device_name}: {(result or {}).get('spoken', 'ok')}"
 
+    if command_type == "take_photo":
+        detail = result or {}
+        if detail.get("archived_path"):
+            base = f"Foto capturada em {device_name} e arquivada localmente."
+            if detail.get("share_requested"):
+                base += " Houve pedido de compartilhamento, mas o arquivo ficou guardado primeiro."
+            return base + f" Caminho: {detail.get('archived_path')}"
+        return f"Foto capturada em {device_name}: {detail or 'concluída'}"
+
+    if command_type == "get_location":
+        detail = result or {}
+        if detail.get("latitude") is not None and detail.get("longitude") is not None:
+            coords = f"{detail.get('latitude')}, {detail.get('longitude')}"
+            maps = detail.get("maps_url")
+            if maps:
+                return f"Localização de {device_name}: {coords} ({maps})"
+            return f"Localização de {device_name}: {coords}"
+        return f"Localização de {device_name}: {detail or 'concluída'}"
+
     return f"Comando {command_type} em {device_name}: concluído — {result or 'sem payload'}"

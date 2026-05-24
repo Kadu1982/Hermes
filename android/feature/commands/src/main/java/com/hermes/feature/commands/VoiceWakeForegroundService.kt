@@ -84,7 +84,7 @@ class VoiceWakeForegroundService : Service() {
         )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Jarvis à escuta")
-            .setContentText("Diga: «Ei Jarvis, envia um e-mail» ou «Ei Jarvis, marca reunião»")
+            .setContentText("Diga: «Ei Jarvis, envia um e-mail», «tira uma foto» ou «onde estou»")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Parar", stopIntent)
             .setOngoing(true)

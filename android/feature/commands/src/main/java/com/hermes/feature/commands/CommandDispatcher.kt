@@ -1,6 +1,7 @@
 package com.hermes.feature.commands
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import com.hermes.core.network.CommandCompleteBody
 import com.hermes.core.network.CommandDto
@@ -70,6 +71,21 @@ class CommandDispatcher(
                         mapOf("path" to outFile.absolutePath, "bytes" to bytes.size),
                     )
                 }
+                "take_photo" -> {
+                    val archiveOnly = cmd.payload?.get("archive_only") as? Boolean ?: true
+                    PhotoCaptureBridge.register(cmd.id.toString())
+                    val intent = Intent(context, PhotoCaptureActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .putExtra(PhotoCaptureActivity.EXTRA_COMMAND_ID, cmd.id.toString())
+                        .putExtra(PhotoCaptureActivity.EXTRA_ARCHIVE_ONLY, archiveOnly)
+                    context.startActivity(intent)
+                    val result = PhotoCaptureBridge.await(cmd.id.toString())
+                    complete(cmd.id, "done", result)
+                }
+                "get_location" -> {
+                    val location = DeviceLocationReader(context).read()
+                    complete(cmd.id, "done", location)
+                }
                 "revoke_local" -> {
                     complete(cmd.id, "done", mapOf("cleared" to true))
                     onRevokeLocal()
@@ -86,6 +102,9 @@ class CommandDispatcher(
         } catch (e: Exception) {
             Log.e("Hermes", "command failed", e)
             localLog.append(Log.getStackTraceString(e).take(4000))
+            if (cmd.type == "take_photo") {
+                PhotoCaptureBridge.fail(cmd.id.toString(), e.message ?: "photo_failed")
+            }
             complete(
                 cmd.id,
                 "failed",
