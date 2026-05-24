@@ -238,8 +238,8 @@ fun CommanderScreen(
         } else {
             Text("Modo voz Jarvis")
             Text(
-                "Ative e diga: «Ei Jarvis, ping no PC-Casa», «Ei Jarvis, tira uma foto» " +
-                    "ou «Ei Jarvis, onde estou» / «Ei Jarvis, me leva para casa». Instale «Speech Recognition & Synthesis from Google» para voz masculina.",
+                "Ative e diga: «Jarvis», depois «ping no PC-Casa», «tira uma foto» " +
+                    "ou «onde estou» / «me leva para casa». Sem AccessKey, o app cai no modo antigo com «Ei Jarvis».",
             )
             Button(
                 onClick = {
@@ -262,7 +262,7 @@ fun CommanderScreen(
                     store.voiceWakeEnabled = voiceWakeOn
                     if (voiceWakeOn) {
                         VoiceWakeForegroundService.start(activity)
-                        onStatus("Escuta ativa — diga «Ei Jarvis, …»")
+                        onStatus("Escuta ativa — diga «Jarvis» e depois o comando")
                     } else {
                         VoiceWakeForegroundService.stop(activity)
                         onStatus("Escuta desligada")
@@ -270,7 +270,7 @@ fun CommanderScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (voiceWakeOn) "Parar escuta «Ei Jarvis»" else "Ativar escuta «Ei Jarvis»")
+                Text(if (voiceWakeOn) "Parar escuta Jarvis" else "Ativar escuta Jarvis")
             }
             Button(
                 onClick = { voice.openVoiceSettings() },

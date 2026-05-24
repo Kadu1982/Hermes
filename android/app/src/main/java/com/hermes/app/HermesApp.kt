@@ -4,6 +4,7 @@ import android.app.Application
 import com.hermes.core.network.HermesApi
 import com.hermes.core.network.NetworkModule
 import com.hermes.core.security.SecureTokenStore
+import com.hermes.app.BuildConfig
 
 class HermesApp : Application() {
     lateinit var store: SecureTokenStore
@@ -12,6 +13,7 @@ class HermesApp : Application() {
     override fun onCreate() {
         super.onCreate()
         store = SecureTokenStore(this)
+        store.picovoiceAccessKey = BuildConfig.PICOVOICE_ACCESS_KEY
         instance = this
     }
 

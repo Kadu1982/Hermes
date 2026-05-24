@@ -40,6 +40,11 @@ class SecureTokenStore(context: Context) {
         get() = prefs.getString(KEY_NOTIFY, "voice") ?: "voice"
         set(value) { prefs.edit().putString(KEY_NOTIFY, value).apply() }
 
+    /** AccessKey do Picovoice usado pelo wake word local, se configurado. */
+    var picovoiceAccessKey: String
+        get() = prefs.getString(KEY_PICOVOICE, "") ?: ""
+        set(value) { prefs.edit().putString(KEY_PICOVOICE, value).apply() }
+
     /** Modo «Ei Jarvis» — escuta contínua em segundo plano. */
     var voiceWakeEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOICE_WAKE, false)
@@ -64,6 +69,7 @@ class SecureTokenStore(context: Context) {
         private const val KEY_ADMIN = "admin_token"
         private const val KEY_ADMIN_PARTIAL = "admin_partial_token"
         private const val KEY_NOTIFY = "notify_channel"
+        private const val KEY_PICOVOICE = "picovoice_access_key"
         private const val KEY_VOICE_WAKE = "voice_wake_enabled"
     }
 }

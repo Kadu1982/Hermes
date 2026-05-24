@@ -21,5 +21,7 @@ object WakePhraseParser {
         return null
     }
 
+    fun isWakeOnly(spoken: String): Boolean = spoken.lowercase().trim() in setOf("jarvis", "ei jarvis")
+
     fun containsWakeWord(spoken: String): Boolean = parse(spoken) != null
 }

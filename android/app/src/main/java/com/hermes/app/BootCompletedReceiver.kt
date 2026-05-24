@@ -3,6 +3,7 @@ package com.hermes.app
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.hermes.app.BuildConfig
 import com.hermes.core.security.SecureTokenStore
 import com.hermes.feature.commands.VoiceWakeForegroundService
 
@@ -14,6 +15,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
         if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
 
         val store = SecureTokenStore(context.applicationContext)
+        store.picovoiceAccessKey = BuildConfig.PICOVOICE_ACCESS_KEY
         if (!store.voiceWakeEnabled) return
 
         VoiceWakeForegroundService.start(context.applicationContext)

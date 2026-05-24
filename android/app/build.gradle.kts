@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+fun String.escapeForBuildConfig(): String = replace("\\", "\\\\").replace("\"", "\\\"")
+
 android {
     namespace = "com.hermes.app"
     compileSdk = 35
@@ -14,6 +16,12 @@ android {
         versionCode = 3
         versionName = "1.2-mvp"
         buildConfigField("String", "API_BASE_URL", "\"http://72.60.55.213:18080\"")
+        val picovoiceAccessKey = providers.gradleProperty("picovoiceAccessKey").orNull.orEmpty()
+        buildConfigField(
+            "String",
+            "PICOVOICE_ACCESS_KEY",
+            "\"${picovoiceAccessKey.escapeForBuildConfig()}\"",
+        )
     }
     buildTypes {
         release {

@@ -20,6 +20,7 @@ dependencies {
     implementation(project(":core:security"))
     implementation(project(":feature:inventory"))
     implementation(project(":feature:files"))
+    implementation("ai.picovoice:porcupine-android:4.0.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

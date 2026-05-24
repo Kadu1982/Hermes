@@ -17,6 +17,8 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import ai.picovoice.porcupine.BuiltInKeyword
+import ai.picovoice.porcupine.PorcupineManager
 import com.hermes.core.security.SecureTokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,8 +42,11 @@ class VoiceWakeForegroundService : Service() {
     private val scope = CoroutineScope(Dispatchers.Default + Job())
     private var processingCommand = false
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val commandTimeoutRunnable = Runnable { finishCommandCaptureAndResumeWake() }
     private var speechRecognizer: SpeechRecognizer? = null
+    private var porcupineManager: PorcupineManager? = null
     private var listening = false
+    private var commandCaptureActive = false
     private var pendingVoiceAction: PendingVoiceAction? = null
     private lateinit var store: SecureTokenStore
 
@@ -54,7 +59,9 @@ class VoiceWakeForegroundService : Service() {
             return
         }
         startForegroundNotification()
-        mainHandler.post { startListeningLoop() }
+        if (!startWakeWordEngine()) {
+            mainHandler.post { startListeningLoop() }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -84,7 +91,7 @@ class VoiceWakeForegroundService : Service() {
         )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Jarvis à escuta")
-            .setContentText("Diga: «Ei Jarvis, envia um e-mail», «tira uma foto», «onde estou» ou «me leva para casa»")
+            .setContentText("Diga: «Jarvis» e depois o comando, como «envia um e-mail» ou «tira uma foto»")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Parar", stopIntent)
             .setOngoing(true)
@@ -98,6 +105,117 @@ class VoiceWakeForegroundService : Service() {
         } else {
             startForeground(NOTIFY_ID, notification)
         }
+    }
+
+    private fun startWakeWordEngine(): Boolean {
+        val accessKey = store.picovoiceAccessKey.trim()
+        if (accessKey.isBlank()) return false
+        return runCatching {
+            val manager = PorcupineManager.Builder()
+                .setAccessKey(accessKey)
+                .setBuiltInKeyword(BuiltInKeyword.JARVIS)
+                .setSensitivity(0.5f)
+                .build(applicationContext) { _ ->
+                    mainHandler.post { onWakeWordDetected() }
+                }
+            porcupineManager = manager
+            manager.start()
+            updateNotification("À espera de Jarvis")
+        }.fold(
+            onSuccess = { true },
+            onFailure = {
+                updateNotification("Wake local indisponível, a usar modo alternativo")
+                stopWakeWordEngine()
+                false
+            },
+        )
+    }
+
+    private fun stopWakeWordEngine() {
+        runCatching { porcupineManager?.stop() }
+        runCatching { porcupineManager?.delete() }
+        porcupineManager = null
+    }
+
+    private fun restartWakeWordEngine() {
+        if (commandCaptureActive || processingCommand) return
+        stopCommandCapture()
+        stopWakeWordEngine()
+        if (!startWakeWordEngine()) {
+            mainHandler.post { startListeningLoop() }
+        }
+    }
+
+    private fun onWakeWordDetected() {
+        if (processingCommand || commandCaptureActive) return
+        commandCaptureActive = true
+        stopWakeWordEngine()
+        updateNotification("Jarvis ouvido, diga o comando")
+        startCommandCapture()
+    }
+
+    private fun startCommandCapture() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            commandCaptureActive = false
+            restartWakeWordEngine()
+            return
+        }
+        stopCommandCapture()
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+            setRecognitionListener(commandRecognitionListener)
+        }
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
+        }
+        listening = true
+        speechRecognizer?.startListening(intent)
+        mainHandler.removeCallbacks(commandTimeoutRunnable)
+        mainHandler.postDelayed(commandTimeoutRunnable, 8_000)
+    }
+
+    private fun stopCommandCapture() {
+        mainHandler.removeCallbacks(commandTimeoutRunnable)
+        listening = false
+        runCatching { speechRecognizer?.stopListening() }
+        runCatching { speechRecognizer?.destroy() }
+        speechRecognizer = null
+    }
+
+    private fun finishCommandCaptureAndResumeWake() {
+        if (!commandCaptureActive && speechRecognizer == null) return
+        stopCommandCapture()
+        commandCaptureActive = false
+        pendingVoiceAction = null
+        restartWakeWordEngine()
+    }
+
+    private val commandRecognitionListener = object : RecognitionListener {
+        override fun onReadyForSpeech(params: Bundle?) {}
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() {}
+        override fun onError(error: Int) {
+            if (!commandCaptureActive) {
+                finishCommandCaptureAndResumeWake()
+            }
+        }
+        override fun onResults(results: Bundle?) {
+            val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                .orEmpty()
+            val confidence = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+                ?.firstOrNull()
+                ?: 0f
+            handleCommandUtterance(text, confidence)
+        }
+        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
     private fun startListeningLoop() {
@@ -135,7 +253,7 @@ class VoiceWakeForegroundService : Service() {
             val confidence = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
                 ?.firstOrNull()
                 ?: 0f
-            handleUtterance(text, confidence)
+            handleCommandUtterance(text, confidence)
             scheduleRestart()
         }
         override fun onPartialResults(partialResults: Bundle?) {
@@ -144,12 +262,20 @@ class VoiceWakeForegroundService : Service() {
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
-    private fun handleUtterance(spoken: String, confidence: Float) {
+    private fun handleCommandUtterance(spoken: String, confidence: Float) {
         if (confidence > 0f && confidence < MIN_RECOGNITION_CONFIDENCE) return
-        val cmd = WakePhraseParser.parse(spoken) ?: return
+        val trimmed = spoken.trim()
+        if (trimmed.isBlank() || WakePhraseParser.isWakeOnly(trimmed)) {
+            mainHandler.removeCallbacks(commandTimeoutRunnable)
+            mainHandler.postDelayed(commandTimeoutRunnable, 8_000)
+            return
+        }
+        val cmd = WakePhraseParser.parse(spoken) ?: trimmed
+        if (cmd.isBlank()) return
         val normalized = cmd.trim().lowercase()
         if (pendingVoiceAction == null && normalized in setOf("confirmar", "confirmo", "sim", "pode", "pode fazer", "executar", "cancelar", "cancela", "não", "nao", "parar", "stop")) {
             updateNotification("Sem confirmação pendente")
+            finishCommandCaptureAndResumeWake()
             return
         }
         if (pendingVoiceAction != null) {
@@ -161,6 +287,7 @@ class VoiceWakeForegroundService : Service() {
                 normalized in setOf("cancelar", "cancela", "não", "nao", "parar", "stop") -> {
                     pendingVoiceAction = null
                     updateNotification("Confirmação cancelada")
+                    finishCommandCaptureAndResumeWake()
                     return
                 }
             }
@@ -172,6 +299,7 @@ class VoiceWakeForegroundService : Service() {
         if (processingCommand) return
         processingCommand = true
         scope.launch {
+            var resumeWake = false
             val result = BrainVoiceClient.send(
                 applicationContext,
                 command,
@@ -184,19 +312,26 @@ class VoiceWakeForegroundService : Service() {
                         pendingVoiceAction = PendingVoiceAction(command, resp.thread_id, resp.kind)
                         val prompt = resp.summary ?: resp.message
                         updateNotification("Aguardando confirmação: $prompt")
+                        mainHandler.removeCallbacks(commandTimeoutRunnable)
+                        mainHandler.postDelayed(commandTimeoutRunnable, 8_000)
                     } else {
                         pendingVoiceAction = null
                         val summary = resp.summary ?: resp.message
                         updateNotification("Último: $summary")
+                        resumeWake = true
                     }
                 },
                 onFailure = { e ->
                     pendingVoiceAction = null
                     val err = e.message ?: "erro"
                     updateNotification("Erro: $err")
+                    resumeWake = true
                 },
             )
             processingCommand = false
+            if (resumeWake) {
+                mainHandler.postDelayed({ finishCommandCaptureAndResumeWake() }, 1_200)
+            }
         }
     }
 
@@ -221,11 +356,11 @@ class VoiceWakeForegroundService : Service() {
 
     private fun shutdown() {
         store.voiceWakeEnabled = false
+        commandCaptureActive = false
+        mainHandler.removeCallbacks(commandTimeoutRunnable)
+        stopCommandCapture()
+        stopWakeWordEngine()
         listening = false
-        mainHandler.post {
-            speechRecognizer?.destroy()
-            speechRecognizer = null
-        }
         scope.cancel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -237,7 +372,9 @@ class VoiceWakeForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        speechRecognizer?.destroy()
+        mainHandler.removeCallbacks(commandTimeoutRunnable)
+        stopCommandCapture()
+        stopWakeWordEngine()
         scope.cancel()
         super.onDestroy()
     }
