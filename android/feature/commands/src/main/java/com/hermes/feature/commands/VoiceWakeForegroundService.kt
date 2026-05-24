@@ -45,10 +45,6 @@ class VoiceWakeForegroundService : Service() {
     private var pendingVoiceAction: PendingVoiceAction? = null
     private lateinit var store: SecureTokenStore
 
-    private companion object {
-        private const val MIN_RECOGNITION_CONFIDENCE = 0.75f
-    }
-
     override fun onCreate() {
         super.onCreate()
         store = SecureTokenStore(this)
@@ -271,6 +267,7 @@ class VoiceWakeForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        private const val MIN_RECOGNITION_CONFIDENCE = 0.75f
         private const val CHANNEL_ID = "hermes_voice_wake"
         private const val NOTIFY_ID = 43
         private const val ACTION_STOP = "com.hermes.STOP_VOICE_WAKE"
