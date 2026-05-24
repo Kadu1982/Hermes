@@ -21,3 +21,21 @@ data class CommandCompleteBody(
     val result: Map<String, Any>?,
     val logs: String?,
 )
+
+data class BrainGoogleBody(
+    val text: String,
+    val confirm: Boolean = false,
+    val thread_id: String? = null,
+)
+
+data class BrainGoogleResp(
+    val thread_id: String? = null,
+    val service: String,
+    val action: String,
+    val status: String,
+    val message: String,
+    val requires_confirmation: Boolean = false,
+    val summary: String? = null,
+    val data: Any? = null,
+    val raw_output: String? = null,
+)

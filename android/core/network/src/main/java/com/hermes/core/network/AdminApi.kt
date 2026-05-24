@@ -62,6 +62,9 @@ interface AdminApi {
     @POST("commands/natural")
     suspend fun natural(@Body body: NaturalCommandBody): NaturalCommandResp
 
+    @POST("brain/google")
+    suspend fun google(@Body body: BrainGoogleBody): BrainGoogleResp
+
     @GET("hermes/voice-profile")
     suspend fun voiceProfile(): Map<String, Any?>
 }

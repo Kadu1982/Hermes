@@ -48,7 +48,9 @@ def brain_google(
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
-    thread = get_recent_thread(db, "user", str(actor.id))
+    thread = db.get(ConversationThread, body.thread_id) if body.thread_id is not None else None
+    if thread is None:
+        thread = get_recent_thread(db, "user", str(actor.id))
     if thread is None:
         thread = ConversationThread(actor_type="user", actor_id=str(actor.id), origin_channel="brain", subject=body.text[:60])
         db.add(thread)

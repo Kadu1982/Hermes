@@ -129,3 +129,48 @@ def test_brain_google_executes_search_with_summary(client, admin_user, monkeypat
     assert body["status"] == "done"
     assert body["summary"] == "Found 3 unread messages"
     assert body["data"] == [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]
+
+
+def test_brain_google_reuses_existing_thread(client, admin_user, monkeypatch):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    admin_tok = tfa.json()["access_token"]
+
+    from app.routers import brain as brain_router
+
+    def fake_run(service: str, action: str, params: dict[str, object], *, confirm: bool = False):
+        return GoogleWorkspaceResult(
+            service=service,
+            action=action,
+            ok=True,
+            summary="Listed calendar entries",
+            data=[{"id": "e1"}],
+            raw_output='{"summary":"Listed calendar entries"}',
+        )
+
+    monkeypatch.setattr(brain_router, "run_google_workspace", fake_run)
+
+    first = client.post(
+        "/api/v1/brain/google",
+        json={"text": "listar agenda"},
+        headers={"Authorization": f"Bearer {admin_tok}"},
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["thread_id"] is not None
+
+    second = client.post(
+        "/api/v1/brain/google",
+        json={"text": "listar agenda", "thread_id": first_body["thread_id"]},
+        headers={"Authorization": f"Bearer {admin_tok}"},
+    )
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["thread_id"] == first_body["thread_id"]

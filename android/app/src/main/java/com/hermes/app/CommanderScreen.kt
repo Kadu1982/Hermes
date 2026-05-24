@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.hermes.app.voice.HermesVoice
+import com.hermes.core.network.BrainGoogleBody
 import com.hermes.core.network.AdminLoginBody
 import com.hermes.core.network.NaturalCommandBody
 import com.hermes.core.network.NetworkModule
@@ -59,6 +60,15 @@ fun CommanderScreen(
     var voiceWakeOn by remember { mutableStateOf(store.voiceWakeEnabled) }
     var commandText by remember { mutableStateOf("") }
     var notifyChannel by remember { mutableStateOf(store.defaultNotifyChannel) }
+    var googleText by remember { mutableStateOf("buscar e-mails não lidos") }
+    var googleThreadId by remember { mutableStateOf<String?>(null) }
+    var googleStatus by remember { mutableStateOf("") }
+    var googleSummary by remember { mutableStateOf("") }
+    var googleService by remember { mutableStateOf("") }
+    var googleAction by remember { mutableStateOf("") }
+    var googleRaw by remember { mutableStateOf("") }
+    var googleData by remember { mutableStateOf<Any?>(null) }
+    var googleNeedsConfirmation by remember { mutableStateOf(false) }
     val notifyOptions = listOf("voice" to "Voz Jarvis", "push" to "Notificação", "silent" to "Silencioso")
 
     val speechLauncher = rememberLauncherForActivityResult(
@@ -94,6 +104,27 @@ fun CommanderScreen(
         needs2fa = false
         partialToken = ""
         onStatus(message)
+    }
+
+    suspend fun sendGoogle(confirm: Boolean) {
+        onStatus(if (confirm) "Confirmando Google..." else "A falar com o Google...")
+        val api = NetworkModule.createAdminApi(store, normalizedBrain())
+        val r = api.google(
+            BrainGoogleBody(
+                text = googleText,
+                confirm = confirm,
+                thread_id = googleThreadId,
+            ),
+        )
+        googleThreadId = r.thread_id ?: googleThreadId
+        googleService = r.service
+        googleAction = r.action
+        googleStatus = r.status
+        googleSummary = r.summary ?: r.message
+        googleRaw = r.raw_output.orEmpty()
+        googleData = r.data
+        googleNeedsConfirmation = r.requires_confirmation
+        onStatus(if (r.requires_confirmation) "Confirmação requerida pelo Google" else "Google concluído")
     }
 
     suspend fun validateAdminSession(): Boolean {
@@ -311,6 +342,76 @@ fun CommanderScreen(
                     }
                 },
             ) { Text("Enviar comando") }
+            Text("Google Workspace")
+            Text("Fale com o Hermes para Gmail, Calendar, Drive, Docs e Sheets. A mesma thread fica guardada para aprendizagem.")
+            OutlinedTextField(
+                googleText,
+                { googleText = it },
+                Modifier.fillMaxWidth(),
+                label = { Text("Pedido Google") },
+                minLines = 3,
+            )
+            Button(
+                onClick = {
+                    scope.launch {
+                        runCatching { sendGoogle(false) }
+                            .onFailure { e ->
+                                if (e is HttpException && (e.code() == 401 || e.code() == 403)) {
+                                    forceLogout(httpErrorMessage(e))
+                                } else {
+                                    onStatus("Google: ${httpErrorMessage(e)}")
+                                }
+                            }
+                    }
+                },
+            ) { Text("Executar Google") }
+            if (googleNeedsConfirmation) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            runCatching { sendGoogle(true) }
+                                .onFailure { e ->
+                                    if (e is HttpException && (e.code() == 401 || e.code() == 403)) {
+                                        forceLogout(httpErrorMessage(e))
+                                    } else {
+                                        onStatus("Google: ${httpErrorMessage(e)}")
+                                    }
+                                }
+                        }
+                    },
+                ) { Text("Confirmar e executar") }
+            }
+            Button(
+                onClick = {
+                    googleThreadId = null
+                    googleStatus = ""
+                    googleSummary = ""
+                    googleService = ""
+                    googleAction = ""
+                    googleRaw = ""
+                    googleData = null
+                    googleNeedsConfirmation = false
+                    onStatus("Nova thread Google")
+                },
+            ) { Text("Nova thread Google") }
+            if (googleStatus.isNotBlank()) {
+                Text("Status Google: $googleStatus")
+            }
+            if (googleThreadId != null) {
+                Text("Thread Google: $googleThreadId")
+            }
+            if (googleService.isNotBlank() || googleAction.isNotBlank()) {
+                Text("Ação Google: $googleService.$googleAction")
+            }
+            if (googleSummary.isNotBlank()) {
+                Text("Resumo Google: $googleSummary")
+            }
+            if (googleData != null) {
+                Text("Dados Google: ${googleData}")
+            }
+            if (googleRaw.isNotBlank()) {
+                Text("Raw Google: $googleRaw")
+            }
             Button(onClick = {
                 forceLogout("Sessão de comando terminada")
             }) { Text("Sair do modo comando") }
