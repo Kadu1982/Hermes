@@ -201,9 +201,7 @@ class VoiceWakeForegroundService : Service() {
         override fun onBufferReceived(buffer: ByteArray?) {}
         override fun onEndOfSpeech() {}
         override fun onError(error: Int) {
-            if (!commandCaptureActive) {
-                finishCommandCaptureAndResumeWake()
-            }
+            finishCommandCaptureAndResumeWake()
         }
         override fun onResults(results: Bundle?) {
             val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -212,7 +210,7 @@ class VoiceWakeForegroundService : Service() {
             val confidence = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
                 ?.firstOrNull()
                 ?: 0f
-            handleCommandUtterance(text, confidence)
+            handleCommandUtterance(text, confidence, requireWakePhrase = false)
         }
         override fun onPartialResults(partialResults: Bundle?) {}
         override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -253,7 +251,7 @@ class VoiceWakeForegroundService : Service() {
             val confidence = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
                 ?.firstOrNull()
                 ?: 0f
-            handleCommandUtterance(text, confidence)
+            handleCommandUtterance(text, confidence, requireWakePhrase = true)
             scheduleRestart()
         }
         override fun onPartialResults(partialResults: Bundle?) {
@@ -262,15 +260,21 @@ class VoiceWakeForegroundService : Service() {
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
-    private fun handleCommandUtterance(spoken: String, confidence: Float) {
+    private fun handleCommandUtterance(spoken: String, confidence: Float, requireWakePhrase: Boolean) {
         if (confidence > 0f && confidence < MIN_RECOGNITION_CONFIDENCE) return
         val trimmed = spoken.trim()
         if (trimmed.isBlank() || WakePhraseParser.isWakeOnly(trimmed)) {
-            mainHandler.removeCallbacks(commandTimeoutRunnable)
-            mainHandler.postDelayed(commandTimeoutRunnable, 8_000)
+            if (!requireWakePhrase) {
+                mainHandler.removeCallbacks(commandTimeoutRunnable)
+                mainHandler.postDelayed(commandTimeoutRunnable, 8_000)
+            }
             return
         }
-        val cmd = WakePhraseParser.parse(spoken) ?: trimmed
+        val cmd = if (requireWakePhrase) {
+            WakePhraseParser.parse(spoken) ?: return
+        } else {
+            WakePhraseParser.parse(spoken) ?: trimmed
+        }
         if (cmd.isBlank()) return
         val normalized = cmd.trim().lowercase()
         if (pendingVoiceAction == null && normalized in setOf("confirmar", "confirmo", "sim", "pode", "pode fazer", "executar", "cancelar", "cancela", "não", "nao", "parar", "stop")) {

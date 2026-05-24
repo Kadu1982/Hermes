@@ -7,6 +7,7 @@ package com.hermes.feature.commands
 object WakePhraseParser {
     private val WAKE_PHRASES = listOf(
         "ei jarvis",
+        "jarvis",
     ).sortedByDescending { it.length }
 
     fun parse(spoken: String): String? {
