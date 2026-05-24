@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -96,7 +97,7 @@ private fun HermesRoot(activity: MainActivity) {
         }
     }
 
-    // Agente (poll de comandos) deve correr em qualquer tab enquanto pareado.
+    // O agente de comandos deve continuar a correr enquanto houver token de dispositivo.
     LaunchedEffect(app.store.deviceToken) {
         if (app.store.deviceToken != null) {
             val intent = Intent(activity, CommandForegroundService::class.java)
@@ -134,8 +135,13 @@ private fun HermesRoot(activity: MainActivity) {
                         scope.launch {
                             val api = app.api() ?: return@launch
                             runCatching { api.me() }
-                                .onSuccess { deviceSnapshot = it; onStatus("Status atualizado") }
-                                .onFailure { onStatus("Erro ao ler estado: ${it.message}") }
+                                .onSuccess {
+                                    deviceSnapshot = it
+                                    statusText = "Status atualizado"
+                                }
+                                .onFailure {
+                                    statusText = "Erro ao ler estado: ${it.message}"
+                                }
                         }
                     },
                     onPickFile = { pickFile.launch("*/*") },
@@ -174,24 +180,46 @@ private fun PhoneSection(
 ) {
     val app = HermesApp.instance
     val paired = app.store.deviceToken != null
+
     LaunchedEffect(baseUrl, paired) {
         if (paired) {
             onRefreshSnapshot()
         }
     }
+
     Text("Telefone")
     Text("O telefone fica pareado com a VPS e mostra o estado do aparelho.")
-    OutlinedTextField(baseUrl, onBaseUrlChange, Modifier.fillMaxWidth(), label = { Text("Server base URL") })
+
+    OutlinedTextField(
+        value = baseUrl,
+        onValueChange = onBaseUrlChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Server base URL") },
+        singleLine = true,
+    )
+
     if (!paired) {
-        OutlinedTextField(pairCode, onPairCodeChange, Modifier.fillMaxWidth(), label = { Text("Pairing code") })
-        OutlinedTextField(deviceName, onDeviceNameChange, Modifier.fillMaxWidth(), label = { Text("Device name") })
+        OutlinedTextField(
+            value = pairCode,
+            onValueChange = onPairCodeChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Pairing code") },
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = deviceName,
+            onValueChange = onDeviceNameChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Device name") },
+            singleLine = true,
+        )
         Button(
             onClick = {
                 scope.launch {
                     onStatus("Pairing…")
-                    val r = PairingRepository(app.store).pair(baseUrl, pairCode, deviceName)
-                    onStatus(if (r.isSuccess) "Paired" else "Error: ${r.exceptionOrNull()?.message}")
-                    if (r.isSuccess) {
+                    val result = PairingRepository(app.store).pair(baseUrl, pairCode, deviceName)
+                    onStatus(if (result.isSuccess) "Paired" else "Error: ${result.exceptionOrNull()?.message}")
+                    if (result.isSuccess) {
                         onRefreshSnapshot()
                         val intent = Intent(activity, CommandForegroundService::class.java)
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -202,9 +230,14 @@ private fun PhoneSection(
                     }
                 }
             },
-        ) { Text("Pair device") }
+        ) {
+            Text("Pair device")
+        }
     } else {
-        Button(onClick = onRefreshSnapshot) { Text("Atualizar estado do aparelho") }
+        Button(onClick = onRefreshSnapshot) {
+            Text("Atualizar estado do aparelho")
+        }
+
         if (deviceSnapshot.isNotEmpty()) {
             Text("Nome: ${deviceSnapshot["name"] ?: "?"}")
             Text("Plataforma: ${deviceSnapshot["platform"] ?: "?"}")
@@ -217,25 +250,44 @@ private fun PhoneSection(
                 Text(inventory.toString())
             }
         }
-        Button(onClick = {
-            scope.launch {
-                val api = app.api()
-                onStatus(
-                    if (api != null) {
-                        runCatching { api.me() }.fold({ "OK: ${it["name"]}" }, { "Err ${it.message}" })
-                    } else "Not configured",
-                )
-            }
-        }) { Text("Ping /me") }
-        Button(onClick = {
-            app.store.clearDevice()
-            activity.stopService(Intent(activity, CommandForegroundService::class.java))
-            onStatus("Telefone desemparelhado")
-        }) { Text("Unpair / clear credentials") }
+
+        Button(
+            onClick = {
+                scope.launch {
+                    val api = app.api()
+                    onStatus(
+                        if (api != null) {
+                            runCatching { api.me() }.fold(
+                                onSuccess = { "OK: ${it["name"]}" },
+                                onFailure = { "Err ${it.message}" },
+                            )
+                        } else {
+                            "Not configured"
+                        },
+                    )
+                }
+            },
+        ) {
+            Text("Ping /me")
+        }
+
+        Button(
+            onClick = {
+                app.store.clearDevice()
+                activity.stopService(Intent(activity, CommandForegroundService::class.java))
+                onStatus("Telefone desemparelhado")
+            },
+        ) {
+            Text("Unpair / clear credentials")
+        }
     }
+
     Text(statusText)
+
     if (pendingUpload != null) {
         Text("Upload requested for command $pendingUpload")
-        Button(onClick = onPickFile) { Text("Choose file to upload") }
+        Button(onClick = onPickFile) {
+            Text("Choose file to upload")
+        }
     }
 }
