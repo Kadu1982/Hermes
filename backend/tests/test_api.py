@@ -298,14 +298,14 @@ def test_natural_command_routes_navigation_to_phone(client: TestClient, admin_us
 
     nav = client.post(
         "/api/v1/commands/natural",
-        json={"text": "Ei Jarvis, me leva para casa"},
+        json={"text": "Ei Jarvis, me leva para Rua Oscar Freire, 123, São Paulo - SP"},
         headers=headers,
     )
     assert nav.status_code == 201
     body = nav.json()
     assert body["parsed_type"] == "navigate_to"
     assert body["parsed_device_name"] == "HermesPhone"
-    assert body["command"]["payload"]["destination"].lower() == "casa"
+    assert body["command"]["payload"]["destination"] == "Rua Oscar Freire, 123, São Paulo - SP"
     assert body["command"]["payload"]["mode"] == "driving"
 
 
@@ -332,7 +332,10 @@ def test_command_wait_formats_photo_and_location_messages():
         device_name="HermesPhone",
         command_type="navigate_to",
         status="done",
-        result={"destination": "casa", "opened_url": "google.navigation:q=casa"},
+        result={
+            "destination": "Rua Oscar Freire, 123, São Paulo - SP",
+            "opened_url": "google.navigation:q=Rua%20Oscar%20Freire",
+        },
     )
     assert "Navegação aberta" in nav
-    assert "google.navigation:q=casa" in nav
+    assert "Rua Oscar Freire, 123, São Paulo - SP" in nav

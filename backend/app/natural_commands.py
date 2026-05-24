@@ -51,16 +51,20 @@ def _extract_speak_text(text: str) -> str:
 
 
 def _extract_navigation_destination(text: str) -> str:
-    dest = text.strip()
-    dest = re.sub(r"^(ei|oi|ok|hey)\s+(jarvis|hermes)[,:\-\s]*", "", dest, flags=re.I)
+    dest = re.sub(r"^(ei|oi|ok|hey)\s+(jarvis|hermes)[,:\-\s]*", "", text.strip(), flags=re.I)
+    patterns = [
+        r"^(?:me\s+)?(?:leva|levar|navega|navegar|abre|abrir|vai|ir|mostra|mostrar)\s+",
+        r"^(?:rota|navegação|navegacao)\s+(?:para|pra|pro|até|a)\s+",
+        r"^(?:para|pra|pro|até|a|ao|à|em\s+direção\s+a)\s+",
+    ]
+    for pattern in patterns:
+        dest = re.sub(pattern, "", dest, flags=re.I)
     dest = re.sub(
-        r"^(me\s+)?(leva|levar|navega|navegar|abre|abrir|vai|ir|mostra|mostrar)\s+",
+        r"^(?:o|a|meu|minha)\s+(?:endereço|endereco|local|destino|rota|navegação|navegacao)\s+",
         "",
         dest,
         flags=re.I,
     )
-    dest = re.sub(r"^(para|pra|pro|até|a|ao|à|em\s+direção\s+a)\s+", "", dest, flags=re.I)
-    dest = re.sub(r"^(rota|navegação|navegacao)\s+(para|pra|pro|até|a)\s+", "", dest, flags=re.I)
     return dest.strip(" ,.:;-")
 
 
