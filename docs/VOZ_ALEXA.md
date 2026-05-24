@@ -19,7 +19,7 @@ Com o **modo escuta** ativo, o telemóvel fica à escuta em segundo plano. Não 
 
 ## Palavras de ativação
 
-`Ei Jarvis` ou `Javrvis` — seguidas do comando.
+`Ei Jarvis` — seguidas do comando.
 
 ## Limitações (MVP)
 
