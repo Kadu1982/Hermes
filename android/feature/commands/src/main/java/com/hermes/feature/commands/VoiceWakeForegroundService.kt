@@ -45,6 +45,10 @@ class VoiceWakeForegroundService : Service() {
     private var pendingVoiceAction: PendingVoiceAction? = null
     private lateinit var store: SecureTokenStore
 
+    private companion object {
+        private const val MIN_RECOGNITION_CONFIDENCE = 0.75f
+    }
+
     override fun onCreate() {
         super.onCreate()
         store = SecureTokenStore(this)
@@ -132,23 +136,20 @@ class VoiceWakeForegroundService : Service() {
             val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.firstOrNull()
                 .orEmpty()
-            handleUtterance(text)
+            val confidence = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+                ?.firstOrNull()
+                ?: 0f
+            handleUtterance(text, confidence)
             scheduleRestart()
         }
         override fun onPartialResults(partialResults: Bundle?) {
-            val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull()
-                ?: return
-            val cmd = WakePhraseParser.parse(text) ?: return
-            if (cmd.length >= 3) {
-                speechRecognizer?.stopListening()
-                handleCommand(cmd)
-            }
+            // Ignoramos parciais para evitar disparos em ruído ambiente.
         }
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
-    private fun handleUtterance(spoken: String) {
+    private fun handleUtterance(spoken: String, confidence: Float) {
+        if (confidence > 0f && confidence < MIN_RECOGNITION_CONFIDENCE) return
         val cmd = WakePhraseParser.parse(spoken) ?: return
         val normalized = cmd.trim().lowercase()
         if (pendingVoiceAction == null && normalized in setOf("confirmar", "confirmo", "sim", "pode", "pode fazer", "executar", "cancelar", "cancela", "não", "nao", "parar", "stop")) {
