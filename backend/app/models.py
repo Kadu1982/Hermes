@@ -202,6 +202,7 @@ ALLOWED_COMMAND_TYPES = frozenset(
         "speak",
         "take_photo",
         "get_location",
+        "navigate_to",
         "server_docker_ps",
         "server_disk",
     }

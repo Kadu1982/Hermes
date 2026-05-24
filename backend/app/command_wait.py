@@ -104,4 +104,11 @@ def format_command_result_message(
             return f"Localização de {device_name}: {coords}"
         return f"Localização de {device_name}: {detail or 'concluída'}"
 
+    if command_type == "navigate_to":
+        detail = result or {}
+        destination = detail.get("destination") or (detail.get("maps_url") and "rota aberta")
+        if detail.get("opened_url"):
+            return f"Navegação aberta em {device_name} para {destination}: {detail.get('opened_url')}"
+        return f"Navegação aberta em {device_name} para {destination}"
+
     return f"Comando {command_type} em {device_name}: concluído — {result or 'sem payload'}"

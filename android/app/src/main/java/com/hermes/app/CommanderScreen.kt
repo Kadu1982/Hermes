@@ -239,7 +239,7 @@ fun CommanderScreen(
             Text("Modo voz estilo Alexa")
             Text(
                 "Ative e diga: «Ei Jarvis, ping no PC-Casa», «Ei Jarvis, tira uma foto» " +
-                    "ou «Ei Jarvis, onde estou». Instale «Speech Recognition & Synthesis from Google» para voz masculina.",
+                    "ou «Ei Jarvis, onde estou» / «Ei Jarvis, me leva para casa». Instale «Speech Recognition & Synthesis from Google» para voz masculina.",
             )
             Button(
                 onClick = {

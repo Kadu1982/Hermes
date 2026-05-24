@@ -36,6 +36,15 @@ def _validate_payload(cmd_type: str, payload: dict | None) -> None:
     if cmd_type == "request_download":
         if not payload.get("file_id"):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "request_download requires file_id")
+    if cmd_type == "navigate_to":
+        destination = str(payload.get("destination", "")).strip()
+        if not destination:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "navigate_to requires destination")
+        if payload.keys() - {"destination", "mode"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "navigate_to only accepts destination and mode")
+        mode = str(payload.get("mode", "driving")).strip().lower()
+        if mode not in {"driving", "walking", "bicycling", "transit"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "navigate_to.mode must be driving, walking, bicycling or transit")
     if cmd_type == "take_photo":
         if set(payload.keys()) - {"archive_only"}:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "take_photo only accepts archive_only")

@@ -86,6 +86,12 @@ class CommandDispatcher(
                     val location = DeviceLocationReader(context).read()
                     complete(cmd.id, "done", location)
                 }
+                "navigate_to" -> {
+                    val destination = cmd.payload?.get("destination")?.toString()?.trim().orEmpty()
+                    val mode = cmd.payload?.get("mode")?.toString()?.trim().orEmpty().ifEmpty { "driving" }
+                    val result = NavigationLauncher.open(context, destination, mode)
+                    complete(cmd.id, "done", result)
+                }
                 "revoke_local" -> {
                     complete(cmd.id, "done", mapOf("cleared" to true))
                     onRevokeLocal()

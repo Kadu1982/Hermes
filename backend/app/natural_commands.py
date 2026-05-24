@@ -14,6 +14,10 @@ _INVENTORY = re.compile(r"\b(invent[aá]rio|inventory|status|informa[cç][aã]o)
 _UPLOAD = re.compile(r"\b(enviar|upload|mandar)\s+(arquivo|ficheiro|file)\b", re.I)
 _SPEAK = re.compile(r"\b(diga|dizer|fale|falar|repete|repita|say|speak)\b", re.I)
 _PHOTO = re.compile(r"\b(foto|fotografia|picture|image|imagem|captura|capturar|tirar|tira)\b", re.I)
+_NAVIGATION = re.compile(
+    r"\b(navega|navegar|navegação|navegacao|rota|dire[cç][aã]o|leva|levar|vai\s+para|ir\s+para|abre\s+(a\s+)?rota|abrir\s+rota|abrir\s+navega[cç][aã]o|me\s+leva|me\s+levar)\b",
+    re.I,
+)
 _LOCATION = re.compile(
     r"\b(localiza[cç][aã]o|geolocaliza[cç][aã]o|gps|onde\s+(estou|estamos)|minha\s+localiza[cç][aã]o|manda\s+minha\s+localiza[cç][aã]o)\b",
     re.I,
@@ -46,6 +50,20 @@ def _extract_speak_text(text: str) -> str:
     return text.strip()
 
 
+def _extract_navigation_destination(text: str) -> str:
+    dest = text.strip()
+    dest = re.sub(r"^(ei|oi|ok|hey)\s+(jarvis|hermes)[,:\-\s]*", "", dest, flags=re.I)
+    dest = re.sub(
+        r"^(me\s+)?(leva|levar|navega|navegar|abre|abrir|vai|ir|mostra|mostrar)\s+",
+        "",
+        dest,
+        flags=re.I,
+    )
+    dest = re.sub(r"^(para|pra|pro|até|a|ao|à|em\s+direção\s+a)\s+", "", dest, flags=re.I)
+    dest = re.sub(r"^(rota|navegação|navegacao)\s+(para|pra|pro|até|a)\s+", "", dest, flags=re.I)
+    return dest.strip(" ,.:;-")
+
+
 def resolve_device(db: Session, text: str, explicit_device_id: uuid.UUID | None) -> Device | None:
     if explicit_device_id:
         return db.get(Device, explicit_device_id)
@@ -62,6 +80,10 @@ def resolve_device(db: Session, text: str, explicit_device_id: uuid.UUID | None)
                 return d
         for d in devices:
             if d.platform == "server":
+                return d
+    if _NAVIGATION.search(text):
+        for d in devices:
+            if d.platform == "android":
                 return d
     if _PHONE.search(text):
         for d in devices:
@@ -99,6 +121,11 @@ def parse_natural_command(db: Session, text: str, explicit_device_id: uuid.UUID 
         cmd_type, payload = "get_inventory", None
     elif _UPLOAD.search(text):
         cmd_type, payload = "request_upload", {}
+    elif _NAVIGATION.search(text):
+        destination = _extract_navigation_destination(text)
+        if not destination:
+            raise ValueError("Diz para onde queres navegar, por exemplo: 'me leva para casa'.")
+        cmd_type, payload = "navigate_to", {"destination": destination, "mode": "driving"}
     elif _PHOTO.search(text):
         payload = {"archive_only": not bool(_SEND_PHOTO.search(text))}
         cmd_type = "take_photo"
@@ -113,7 +140,7 @@ def parse_natural_command(db: Session, text: str, explicit_device_id: uuid.UUID 
         raise ValueError(
             "Não entendi o pedido. Exemplos: 'diga olá', 'ping no PC-Casa', "
             "'inventário do VPS', 'fale boa noite no telefone', "
-            "'tira uma foto', 'onde estou'."
+            "'tira uma foto', 'onde estou', 'me leva para casa'."
         )
     return ParsedNaturalCommand(
         device_id=device.id,

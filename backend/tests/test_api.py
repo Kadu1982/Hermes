@@ -265,6 +265,50 @@ def test_natural_command_routes_photo_and_location(client: TestClient, admin_use
     assert location.json()["parsed_type"] == "get_location"
 
 
+def test_natural_command_routes_navigation_to_phone(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "phone"}, headers=headers)
+    assert pc.status_code == 201
+    phone = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "HermesPhone"},
+    )
+    assert phone.status_code == 201
+
+    pc2 = client.post("/api/v1/pairing/codes", json={"label": "pc"}, headers=headers)
+    assert pc2.status_code == 201
+    desktop = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc2.json()["code"], "device_name": "PC-Casa", "platform": "windows"},
+    )
+    assert desktop.status_code == 201
+
+    nav = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "Ei Jarvis, me leva para casa"},
+        headers=headers,
+    )
+    assert nav.status_code == 201
+    body = nav.json()
+    assert body["parsed_type"] == "navigate_to"
+    assert body["parsed_device_name"] == "HermesPhone"
+    assert body["command"]["payload"]["destination"].lower() == "casa"
+    assert body["command"]["payload"]["mode"] == "driving"
+
+
 def test_command_wait_formats_photo_and_location_messages():
     photo = format_command_result_message(
         device_name="HermesPhone",
@@ -283,3 +327,12 @@ def test_command_wait_formats_photo_and_location_messages():
     )
     assert "Localização de HermesPhone" in location
     assert "https://maps.example" in location
+
+    nav = format_command_result_message(
+        device_name="HermesPhone",
+        command_type="navigate_to",
+        status="done",
+        result={"destination": "casa", "opened_url": "google.navigation:q=casa"},
+    )
+    assert "Navegação aberta" in nav
+    assert "google.navigation:q=casa" in nav
