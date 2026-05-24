@@ -1,0 +1,57 @@
+# Hermes MVP — local stack (Postgres + API + Panel)
+# Usage: docker compose up --build
+# Panel: http://localhost:3000  |  API: http://localhost:8000  |  Docs: http://localhost:8000/docs
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hermes
+      POSTGRES_PASSWORD: hermes
+      POSTGRES_DB: hermes
+    ports:
+      - "5432:5432"
+    volumes:
+      - hermes_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hermes -d hermes"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      HERMES_DATABASE_URL: postgresql+psycopg://hermes:hermes@db:5432/hermes
+      HERMES_JWT_SECRET: dev-docker-jwt-replace-in-production
+      HERMES_PAIRING_PEPPER: dev-docker-pepper-replace-in-production
+      HERMES_CORS_ORIGINS: http://localhost:3000
+      HERMES_FILES_DIR: /data/files
+      HERMES_MAX_UPLOAD_MB: "20"
+      HERMES_ADMIN_EMAIL: admin@example.com
+      HERMES_ADMIN_PASSWORD: change-me-now
+    volumes:
+      - hermes_files:/data/files
+    depends_on:
+      db:
+        condition: service_healthy
+
+  panel:
+    build:
+      context: .
+      dockerfile: panel/Dockerfile
+      args:
+        # Browser on your machine calls the API via published port 8000
+        NEXT_PUBLIC_HERMES_API: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  hermes_pg:
+  hermes_files:

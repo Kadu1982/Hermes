@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+import re
+import uuid
+from dataclasses import dataclass
+
+from sqlalchemy.orm import Session
+
+from app.models import Device
+
+# MVP: frases PT/EN → comando estruturado (LLM na VPS depois)
+_PING = re.compile(r"\b(ping|teste|testar|conectividade)\b", re.I)
+_INVENTORY = re.compile(r"\b(invent[aá]rio|inventory|status|informa[cç][aã]o)\b", re.I)
+_UPLOAD = re.compile(r"\b(enviar|upload|mandar)\s+(arquivo|ficheiro|file)\b", re.I)
+_SPEAK = re.compile(r"\b(diga|dizer|fale|falar|repete|repita|say|speak)\b", re.I)
+_GREETING = re.compile(r"\b(ol[aá]|oi|hello|hi|bom\s+dia|boa\s+noite)\b", re.I)
+_SERVER = re.compile(r"\b(vps|servidor|server)\b", re.I)
+_PHONE = re.compile(r"\b(telefone|phone|celular|galaxy|android|s25|telem[oó]vel)\b", re.I)
+_PC = re.compile(r"\b(pc|computador|windows|casa|pc\s*casa)\b", re.I)
+_DOCKER = re.compile(r"\b(docker|containers?|container)\b", re.I)
+
+
+@dataclass
+class ParsedNaturalCommand:
+    device_id: uuid.UUID
+    device_name: str
+    type: str
+    payload: dict | None
+    confidence: str  # high | low
+
+
+def _extract_speak_text(text: str) -> str:
+    """Texto a falar no dispositivo alvo."""
+    stripped = _SPEAK.sub("", text, count=1).strip()
+    stripped = re.sub(r"^[,:\s\-]+", "", stripped)
+    if stripped:
+        return stripped[0].upper() + stripped[1:] if len(stripped) > 1 else stripped.upper()
+    if _GREETING.search(text):
+        return "Olá, senhor."
+    return text.strip()
+
+
+def resolve_device(db: Session, text: str, explicit_device_id: uuid.UUID | None) -> Device | None:
+    if explicit_device_id:
+        return db.get(Device, explicit_device_id)
+    devices = db.query(Device).filter(Device.revoked_at.is_(None)).all()
+    if not devices:
+        return None
+    lower = text.lower()
+    for d in devices:
+        if d.name.lower() in lower:
+            return d
+    if _SERVER.search(text):
+        for d in devices:
+            if d.platform in ("server", "linux") and "vps" in d.name.lower():
+                return d
+        for d in devices:
+            if d.platform == "server":
+                return d
+    if _PHONE.search(text):
+        for d in devices:
+            if d.platform == "android":
+                return d
+    if _PC.search(text) or re.search(r"\bcasa\b", text, re.I):
+        for d in devices:
+            if d.platform == "windows" and "casa" in d.name.lower():
+                return d
+        for d in devices:
+            if d.platform == "windows":
+                return d
+    # "diga olá" sem destino → telemóvel Android (quem costuma falar)
+    if _SPEAK.search(text) or _GREETING.search(text):
+        for d in devices:
+            if d.platform == "android":
+                return d
+    if len(devices) == 1:
+        return devices[0]
+    return None
+
+
+def parse_natural_command(db: Session, text: str, explicit_device_id: uuid.UUID | None) -> ParsedNaturalCommand:
+    text = text.strip()
+    if not text:
+        raise ValueError("Comando vazio")
+    device = resolve_device(db, text, explicit_device_id)
+    if device is None:
+        raise ValueError(
+            "Não encontrei o dispositivo. Menciona o nome (ex.: PC-Casa, S25 Ultra, VPS-Brain)."
+        )
+    if _PING.search(text):
+        cmd_type, payload = "ping", None
+    elif _INVENTORY.search(text):
+        cmd_type, payload = "get_inventory", None
+    elif _UPLOAD.search(text):
+        cmd_type, payload = "request_upload", {}
+    elif _SPEAK.search(text) or (_GREETING.search(text) and not _PING.search(text)):
+        cmd_type = "speak"
+        payload = {"text": _extract_speak_text(text)}
+    elif _DOCKER.search(text):
+        cmd_type, payload = "server_docker_ps", None
+    else:
+        raise ValueError(
+            "Não entendi o pedido. Exemplos: 'diga olá', 'ping no PC-Casa', "
+            "'inventário do VPS', 'fale boa noite no telefone'."
+        )
+    return ParsedNaturalCommand(
+        device_id=device.id,
+        device_name=device.name,
+        type=cmd_type,
+        payload=payload,
+        confidence="high",
+    )

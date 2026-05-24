@@ -1,0 +1,466 @@
+openapi: 3.1.0
+info:
+  title: Hermes Remote Admin API
+  version: 1.0.0
+  description: |
+    Legitimate remote device administration — MVP.
+    Admin routes require JWT (2FA verified). Device routes use long-lived device tokens.
+servers:
+  - url: https://api.example.com/api/v1
+    description: Production (replace with your VPS hostname)
+tags:
+  - name: auth
+  - name: pairing
+  - name: devices
+  - name: commands
+  - name: files
+  - name: audit
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Admin login (step 1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '200':
+          description: Partial JWT — must complete 2FA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+        '401': { description: Invalid credentials }
+  /auth/2fa/verify:
+    post:
+      tags: [auth]
+      summary: Verify TOTP (step 2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwoFactorVerifyRequest'
+      responses:
+        '200':
+          description: Full JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401': { description: Invalid code or token }
+  /auth/logout:
+    post:
+      tags: [auth]
+      security: [{ adminBearer: [] }]
+      summary: Logout (client discards tokens)
+      responses:
+        '204': { description: No content }
+  /pairing/codes:
+    post:
+      tags: [pairing]
+      security: [{ adminBearer: [] }]
+      summary: Generate pairing code (single use, ~10 min TTL)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePairingCodeRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePairingCodeResponse'
+  /devices/pair:
+    post:
+      tags: [pairing]
+      summary: Pair device with code (no admin JWT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DevicePairRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicePairResponse'
+        '400': { description: Invalid or expired code }
+  /devices:
+    get:
+      tags: [devices]
+      security: [{ adminBearer: [] }]
+      summary: List devices
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/DeviceSummary' }
+                  total: { type: integer }
+  /devices/me:
+    get:
+      tags: [devices]
+      security: [{ deviceBearer: [] }]
+      summary: Current device profile
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceMe'
+  /devices/me/heartbeat:
+    post:
+      tags: [devices]
+      security: [{ deviceBearer: [] }]
+      summary: Report minimal inventory / liveness
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+      responses:
+        '204': { description: Accepted }
+  /devices/me/rotate-token:
+    post:
+      tags: [devices]
+      security: [{ deviceBearer: [] }]
+      summary: Issue new device token (invalidates previous)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device_token]
+                properties:
+                  device_token:
+                    type: string
+                    description: Plaintext shown once
+  /devices/me/commands/next:
+    get:
+      tags: [commands]
+      security: [{ deviceBearer: [] }]
+      summary: Claim next pending command
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CommandJob'
+                  - type: 'null'
+        '204': { description: No pending commands }
+  /devices/me/commands/{command_id}/complete:
+    post:
+      tags: [commands]
+      security: [{ deviceBearer: [] }]
+      parameters:
+        - name: command_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandCompleteRequest'
+      responses:
+        '204': { description: OK }
+        '404': { description: Command not found for device }
+  /devices/{device_id}/revoke:
+    post:
+      tags: [devices]
+      security: [{ adminBearer: [] }]
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Device revoked }
+  /devices/{device_id}/commands:
+    get:
+      tags: [commands]
+      security: [{ adminBearer: [] }]
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/CommandJobAdmin' }
+                  total: { type: integer }
+    post:
+      tags: [commands]
+      security: [{ adminBearer: [] }]
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommandRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandJobAdmin'
+  /files/upload:
+    post:
+      tags: [files]
+      security: [{ deviceBearer: [] }]
+      summary: Upload file for a command
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [command_id, file]
+              properties:
+                command_id: { type: string, format: uuid }
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileMeta'
+  /files/{file_id}/download:
+    get:
+      tags: [files]
+      security: [{ deviceBearer: [] }]
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Binary stream
+          content:
+            application/octet-stream: {}
+  /audit:
+    get:
+      tags: [audit]
+      security: [{ adminBearer: [] }]
+      parameters:
+        - name: device_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditLogEntry' }
+                  total: { type: integer }
+components:
+  securitySchemes:
+    adminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    deviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: DeviceToken
+  schemas:
+    AdminLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    AdminLoginResponse:
+      type: object
+      required: [access_token, token_type, requires_2fa]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, default: bearer }
+        requires_2fa: { type: boolean }
+    TwoFactorVerifyRequest:
+      type: object
+      required: [access_token, code]
+      properties:
+        access_token: { type: string }
+        code: { type: string, minLength: 6, maxLength: 8 }
+    TokenPair:
+      type: object
+      required: [access_token, token_type]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string }
+    CreatePairingCodeRequest:
+      type: object
+      properties:
+        label: { type: string, maxLength: 120 }
+    CreatePairingCodeResponse:
+      type: object
+      required: [id, code, expires_at]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, description: Human-readable one-time code }
+        expires_at: { type: string, format: date-time }
+    DevicePairRequest:
+      type: object
+      required: [pairing_code, device_name]
+      properties:
+        pairing_code: { type: string }
+        device_name: { type: string, maxLength: 120 }
+        public_key: { type: string, nullable: true }
+    DevicePairResponse:
+      type: object
+      required: [device_id, device_token]
+      properties:
+        device_id: { type: string, format: uuid }
+        device_token:
+          type: string
+          description: Plaintext — store once on device
+    DeviceSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        platform: { type: string }
+        last_seen: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+    DeviceMe:
+      allOf:
+        - $ref: '#/components/schemas/DeviceSummary'
+        - type: object
+          properties:
+            policy_version: { type: integer }
+    HeartbeatRequest:
+      type: object
+      properties:
+        battery_percent: { type: number, nullable: true }
+        network_type: { type: string, nullable: true }
+        app_version: { type: string, nullable: true }
+        os_version: { type: string, nullable: true }
+        inventory:
+          type: object
+          additionalProperties: true
+          nullable: true
+    CommandType:
+      type: string
+      enum:
+        - ping
+        - get_inventory
+        - request_upload
+        - request_download
+        - revoke_local
+        - noop
+    CommandStatus:
+      type: string
+      enum: [pending, running, done, failed]
+    CreateCommandRequest:
+      type: object
+      required: [type]
+      properties:
+        type: { $ref: '#/components/schemas/CommandType' }
+        payload:
+          type: object
+          additionalProperties: true
+          nullable: true
+    CommandJob:
+      type: object
+      required: [id, type, payload, status]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/CommandType' }
+        payload: { type: object, additionalProperties: true, nullable: true }
+        status: { $ref: '#/components/schemas/CommandStatus' }
+    CommandJobAdmin:
+      allOf:
+        - $ref: '#/components/schemas/CommandJob'
+        - type: object
+          properties:
+            result: { type: object, additionalProperties: true, nullable: true }
+            created_at: { type: string, format: date-time }
+            completed_at: { type: string, format: date-time, nullable: true }
+    CommandCompleteRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [done, failed]
+        result:
+          type: object
+          additionalProperties: true
+          nullable: true
+        logs:
+          type: string
+          maxLength: 65536
+          nullable: true
+    FileMeta:
+      type: object
+      required: [id, filename, size_bytes, sha256]
+      properties:
+        id: { type: string, format: uuid }
+        filename: { type: string }
+        size_bytes: { type: integer }
+        sha256: { type: string }
+        command_id: { type: string, format: uuid }
+    AuditLogEntry:
+      type: object
+      required: [id, actor_type, action, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        actor_type: { type: string, enum: [user, device, system] }
+        actor_id: { type: string, nullable: true }
+        action: { type: string }
+        metadata: { type: object, additionalProperties: true, nullable: true }
+        created_at: { type: string, format: date-time }

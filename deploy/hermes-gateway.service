@@ -1,0 +1,17 @@
+[Unit]
+Description=Hermes Gateway (cérebro LLM — WhatsApp/Telegram/CLI)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+Environment=HOME=/root
+EnvironmentFile=-/root/.hermes/jarvis-brain.env
+ExecStart=/bin/bash -lc 'source /root/.hermes/jarvis-brain.env 2>/dev/null; exec hermes gateway run'
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes device agent (VPS-Brain)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/jarvis-horizon/agents/hermes-agent
+Environment=HERMES_AGENT_CONFIG=/root/.config/hermes-agent/config.json
+ExecStart=/root/jarvis-horizon/agents/hermes-agent/.venv/bin/python -m hermes_agent run --interval 5
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

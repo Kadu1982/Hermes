@@ -1,0 +1,68 @@
+# Hermes / Jarvis — stack isolado na VPS (sem partilhar rede com saude_*)
+# Uso: docker compose -f docker-compose.vps.yml --env-file .env up -d --build
+#
+# Painel: http://SEU_IP:13000
+# API:    http://SEU_IP:18080/healthz
+# Docs:   http://SEU_IP:18080/docs
+
+name: jarvis-horizon
+
+networks:
+  jarvis_net:
+    name: jarvis_horizon_net
+    driver: bridge
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [jarvis_net]
+    environment:
+      POSTGRES_USER: ${HERMES_DB_USER:-hermes}
+      POSTGRES_PASSWORD: ${HERMES_DB_PASSWORD:?set HERMES_DB_PASSWORD in .env}
+      POSTGRES_DB: ${HERMES_DB_NAME:-hermes}
+    volumes:
+      - jarvis_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HERMES_DB_USER:-hermes} -d ${HERMES_DB_NAME:-hermes}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # Postgres só na rede interna — não publicar 5432 no host (evita conflito com saude)
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    networks: [jarvis_net]
+    ports:
+      - "${HERMES_API_HOST_PORT:-18080}:8000"
+    env_file: .env
+    environment:
+      HERMES_DATABASE_URL: postgresql+psycopg://${HERMES_DB_USER:-hermes}:${HERMES_DB_PASSWORD}@db:5432/${HERMES_DB_NAME:-hermes}
+      HERMES_FILES_DIR: /data/files
+    volumes:
+      - jarvis_files:/data/files
+    depends_on:
+      db:
+        condition: service_healthy
+
+  panel:
+    build:
+      context: .
+      dockerfile: panel/Dockerfile
+      args:
+        NEXT_PUBLIC_HERMES_API: ${NEXT_PUBLIC_HERMES_API:?set NEXT_PUBLIC_HERMES_API in .env}
+    restart: unless-stopped
+    networks: [jarvis_net]
+    ports:
+      - "${HERMES_PANEL_HOST_PORT:-13000}:3000"
+    depends_on:
+      - api
+
+volumes:
+  jarvis_pg:
+    name: jarvis_horizon_pg
+  jarvis_files:
+    name: jarvis_horizon_files
