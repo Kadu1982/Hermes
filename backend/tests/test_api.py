@@ -309,6 +309,134 @@ def test_natural_command_routes_navigation_to_phone(client: TestClient, admin_us
     assert body["command"]["payload"]["mode"] == "driving"
 
 
+def test_natural_command_routes_android_actions(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "phone"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "HermesPhone"},
+    )
+    assert pair.status_code == 201
+    device_id = pair.json()["device_id"]
+
+    open_app = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "abre WhatsApp no meu telefone", "device_id": device_id},
+        headers=headers,
+    )
+    assert open_app.status_code == 201
+    assert open_app.json()["parsed_type"] == "open_app"
+    assert open_app.json()["command"]["payload"]["app_name"] == "WhatsApp"
+    assert open_app.json()["command"]["payload"]["package_name"] == "com.whatsapp"
+
+    home = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "volta para home no S25"},
+        headers=headers,
+    )
+    assert home.status_code == 201
+    assert home.json()["parsed_type"] == "android_system_action"
+    assert home.json()["command"]["payload"]["action"] == "home"
+
+    quick_settings = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "abre definições rápidas no celular"},
+        headers=headers,
+    )
+    assert quick_settings.status_code == 201
+    assert quick_settings.json()["parsed_type"] == "android_system_action"
+    assert quick_settings.json()["command"]["payload"]["action"] == "quick_settings"
+
+    camera = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "abre a câmera no telefone"},
+        headers=headers,
+    )
+    assert camera.status_code == 201
+    assert camera.json()["parsed_type"] == "android_deep_link"
+    assert camera.json()["command"]["payload"]["target"] == "camera"
+
+    unlock = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "desbloqueia o telefone"},
+        headers=headers,
+    )
+    assert unlock.status_code == 201
+    assert unlock.json()["parsed_type"] == "request_unlock"
+    assert unlock.json()["command"]["payload"] is None
+
+
+def test_android_command_payload_validation(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "phone"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "HermesPhone"},
+    )
+    assert pair.status_code == 201
+    device_id = pair.json()["device_id"]
+
+    invalid_open = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "open_app", "payload": {"package_name": "com.whatsapp"}},
+        headers=headers,
+    )
+    assert invalid_open.status_code == 400
+    assert "app_name" in invalid_open.json()["detail"]
+
+    invalid_action = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "android_system_action", "payload": {"action": "sleep"}},
+        headers=headers,
+    )
+    assert invalid_action.status_code == 400
+    assert "invalid" in invalid_action.json()["detail"]
+
+    invalid_deep_link = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "android_deep_link", "payload": {"target": "browser"}},
+        headers=headers,
+    )
+    assert invalid_deep_link.status_code == 400
+    assert "invalid" in invalid_deep_link.json()["detail"]
+
+    invalid_unlock = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "request_unlock", "payload": {"reason": "test"}},
+        headers=headers,
+    )
+    assert invalid_unlock.status_code == 400
+    assert "does not accept payload" in invalid_unlock.json()["detail"]
+
+
 def test_command_wait_formats_photo_and_location_messages():
     photo = format_command_result_message(
         device_name="HermesPhone",
@@ -339,3 +467,11 @@ def test_command_wait_formats_photo_and_location_messages():
     )
     assert "Navegação aberta" in nav
     assert "Rua Oscar Freire, 123, São Paulo - SP" in nav
+
+    open_app = format_command_result_message(
+        device_name="HermesPhone",
+        command_type="open_app",
+        status="done",
+        result={"app_name": "WhatsApp", "opened": True},
+    )
+    assert "App aberto" in open_app

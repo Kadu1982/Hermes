@@ -50,6 +50,32 @@ def _validate_payload(cmd_type: str, payload: dict | None) -> None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "take_photo only accepts archive_only")
         if payload and "archive_only" in payload and not isinstance(payload["archive_only"], bool):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "take_photo.archive_only must be boolean")
+    if cmd_type == "open_app":
+        if not payload.get("app_name"):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "open_app requires app_name")
+        if set(payload.keys()) - {"app_name", "package_name"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "open_app only accepts app_name and package_name")
+    if cmd_type == "android_system_action":
+        action = str(payload.get("action", "")).strip()
+        if action not in {"home", "back", "recents", "notifications", "quick_settings"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "android_system_action.action is invalid")
+        if set(payload.keys()) - {"action"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "android_system_action only accepts action")
+    if cmd_type == "android_deep_link":
+        target = str(payload.get("target", "")).strip()
+        if target not in {"camera", "maps", "settings", "phone"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "android_deep_link.target is invalid")
+        if set(payload.keys()) - {"target"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "android_deep_link only accepts target")
+    if cmd_type == "request_unlock":
+        if payload:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "request_unlock does not accept payload")
+    if cmd_type == "android_ui_action":
+        flow = str(payload.get("flow", "")).strip()
+        if not flow:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "android_ui_action requires flow")
+        if set(payload.keys()) - {"flow", "package_name", "action", "target", "text"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "android_ui_action contains unsupported fields")
 
 
 @router.post("/devices/{device_id}/commands", response_model=CommandJobAdmin, status_code=status.HTTP_201_CREATED)

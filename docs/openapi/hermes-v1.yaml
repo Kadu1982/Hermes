@@ -402,6 +402,17 @@ components:
         - request_download
         - revoke_local
         - noop
+        - speak
+        - take_photo
+        - get_location
+        - navigate_to
+        - server_docker_ps
+        - server_disk
+        - open_app
+        - android_system_action
+        - android_deep_link
+        - request_unlock
+        - android_ui_action
     CommandStatus:
       type: string
       enum: [pending, running, done, failed]
@@ -409,7 +420,8 @@ components:
       type: object
       required: [type]
       properties:
-        type: { $ref: '#/components/schemas/CommandType' }
+        type:
+          $ref: '#/components/schemas/CommandType'
         payload:
           type: object
           additionalProperties: true

@@ -2,7 +2,9 @@ package com.hermes.feature.commands
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
+import android.provider.Settings
 import com.hermes.core.network.CommandCompleteBody
 import com.hermes.core.network.CommandDto
 import com.hermes.core.network.HermesApi
@@ -18,6 +20,8 @@ class CommandDispatcher(
 ) {
     private val inventory = InventoryCollector(context)
     private val speaker = DeviceSpeaker(context)
+    private val appLaunchResolver = AppLaunchResolver()
+    private val systemActionRunner = SystemActionRunner()
 
     suspend fun pollOnce(): Boolean {
         val res = api.nextCommand()
@@ -91,6 +95,103 @@ class CommandDispatcher(
                     val mode = cmd.payload?.get("mode")?.toString()?.trim().orEmpty().ifEmpty { "driving" }
                     val result = NavigationLauncher.open(context, destination, mode)
                     complete(cmd.id, "done", result)
+                }
+                "open_app" -> {
+                    val appName = cmd.payload?.get("app_name")?.toString()?.trim().orEmpty()
+                    val packageName = cmd.payload?.get("package_name")?.toString()?.trim().orEmpty().ifBlank { null }
+                    val target = appLaunchResolver.resolve(appName, packageName)
+                        ?: error("unknown_app")
+                    val intent = target.packageName?.let { context.packageManager.getLaunchIntentForPackage(it) }
+                        ?: error("launch_intent_unavailable")
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                    complete(
+                        cmd.id,
+                        "done",
+                        mapOf(
+                            "app_name" to target.appName,
+                            "package_name" to target.packageName,
+                            "opened" to true,
+                        ),
+                    )
+                }
+                "android_system_action" -> {
+                    val action = cmd.payload?.get("action")?.toString().orEmpty()
+                    val result = systemActionRunner.run(action)
+                    if (!result.performed) {
+                        complete(
+                            cmd.id,
+                            "failed",
+                            mapOf("action" to result.action, "error" to (result.error ?: "system_action_failed")),
+                            result.error,
+                        )
+                    } else {
+                        complete(cmd.id, "done", mapOf("action" to result.action, "performed" to true))
+                    }
+                }
+                "android_deep_link" -> {
+                    val targetName = cmd.payload?.get("target")?.toString()?.trim().orEmpty()
+                    val target = appLaunchResolver.resolveDeepLink(targetName)
+                        ?: error("unsupported_deep_link")
+                    val intent = when (target.intentAction) {
+                        "android.media.action.STILL_IMAGE_CAMERA" -> Intent(target.intentAction).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        "android.settings.SETTINGS" -> Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        "android.intent.action.DIAL" -> Intent(Intent.ACTION_DIAL, Uri.parse(target.dataUri ?: "tel:")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        else -> Intent(target.intentAction).apply {
+                            data = target.dataUri?.let(Uri::parse)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    }
+                    context.startActivity(intent)
+                    complete(
+                        cmd.id,
+                        "done",
+                        mapOf(
+                            "target" to targetName,
+                            "app_name" to target.appName,
+                            "package_name" to target.packageName,
+                            "opened" to true,
+                        ),
+                    )
+                }
+                "request_unlock" -> {
+                    CommandBridge.requestUnlockUi(cmd.id)
+                    val result = try {
+                        CommandBridge.awaitUnlock(cmd.id)
+                    } catch (e: Exception) {
+                        complete(
+                            cmd.id,
+                            "failed",
+                            mapOf("approved" to false, "dismissed" to false, "error" to (e.message ?: "unlock_wait_failed")),
+                            e.message,
+                        )
+                        return
+                    }
+                    val approved = result["approved"] as? Boolean ?: false
+                    val dismissed = result["dismissed"] as? Boolean ?: false
+                    if (approved && dismissed) {
+                        complete(cmd.id, "done", result)
+                    } else {
+                        complete(cmd.id, "failed", result, result["error"]?.toString())
+                    }
+                }
+                "android_ui_action" -> {
+                    val service = JarvisAccessibilityBridge.service
+                    if (service == null) {
+                        complete(
+                            cmd.id,
+                            "failed",
+                            mapOf("flow" to (cmd.payload?.get("flow")?.toString() ?: "allowlisted"), "error" to "accessibility_service_not_enabled"),
+                            "accessibility_service_not_enabled",
+                        )
+                    } else {
+                        val result = service.executeAllowlistedAction(cmd.payload ?: emptyMap())
+                        if (result["performed"] == true) {
+                            complete(cmd.id, "done", result)
+                        } else {
+                            complete(cmd.id, "failed", result, result["error"]?.toString())
+                        }
+                    }
                 }
                 "revoke_local" -> {
                     complete(cmd.id, "done", mapOf("cleared" to true))

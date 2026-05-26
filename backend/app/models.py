@@ -205,5 +205,10 @@ ALLOWED_COMMAND_TYPES = frozenset(
         "navigate_to",
         "server_docker_ps",
         "server_disk",
+        "open_app",
+        "android_system_action",
+        "android_deep_link",
+        "request_unlock",
+        "android_ui_action",
     }
 )

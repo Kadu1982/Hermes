@@ -3,6 +3,7 @@ package com.hermes.app
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -30,10 +31,14 @@ import com.hermes.core.network.AdminLoginBody
 import com.hermes.core.network.NaturalCommandBody
 import com.hermes.core.network.NetworkModule
 import com.hermes.core.network.TwoFaBody
+import com.hermes.feature.commands.AndroidUnlockRequester
+import com.hermes.feature.commands.CommandBridge
 import com.hermes.feature.commands.JarvisTts
+import com.hermes.feature.commands.UnlockController
 import com.hermes.feature.commands.VoiceWakeForegroundService
 import com.hermes.feature.pairing.PairingRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import retrofit2.HttpException
@@ -69,6 +74,7 @@ fun CommanderScreen(
     var googleRaw by remember { mutableStateOf("") }
     var googleData by remember { mutableStateOf<Any?>(null) }
     var googleNeedsConfirmation by remember { mutableStateOf(false) }
+    var pendingUnlock by remember { mutableStateOf(CommandBridge.pendingUnlockCommandId.get()) }
     val notifyOptions = listOf("voice" to "Voz Jarvis", "push" to "Notificação", "silent" to "Silencioso")
 
     val speechLauncher = rememberLauncherForActivityResult(
@@ -147,6 +153,13 @@ fun CommanderScreen(
             onStatus("Sessão antiga removida. Entre de novo (senha + 2FA).")
         }
         checkingSession = false
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            pendingUnlock = CommandBridge.pendingUnlockCommandId.get()
+            delay(400)
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -288,6 +301,58 @@ fun CommanderScreen(
                     )
                 }
             }
+            if (pendingUnlock != null) {
+                Text("Pedido de desbloqueio")
+                Text("O Hermes pediu um desbloqueio legítimo do sistema para este comando.")
+                Button(
+                    onClick = {
+                        val commandId = pendingUnlock ?: return@Button
+                        scope.launch {
+                            onStatus("A solicitar desbloqueio no sistema…")
+                            runCatching {
+                                val outcome = UnlockController().request(AndroidUnlockRequester(activity))
+                                CommandBridge.completeUnlock(
+                                    commandId,
+                                    mapOf(
+                                        "approved" to outcome.approved,
+                                        "dismissed" to outcome.dismissed,
+                                        "message" to outcome.message,
+                                    ),
+                                )
+                                onStatus(
+                                    if (outcome.dismissed) "Desbloqueio confirmado pelo sistema"
+                                    else "Desbloqueio não concluído",
+                                )
+                            }.onFailure { err ->
+                                CommandBridge.failUnlock(commandId, err.message ?: "unlock_failed")
+                                onStatus("Desbloqueio: ${err.message ?: "falha"}")
+                            }
+                        }
+                    },
+                ) { Text("Autorizar desbloqueio") }
+                Button(
+                    onClick = {
+                        val commandId = pendingUnlock ?: return@Button
+                        CommandBridge.completeUnlock(
+                            commandId,
+                            mapOf(
+                                "approved" to false,
+                                "dismissed" to false,
+                                "message" to "user_declined",
+                            ),
+                        )
+                        onStatus("Pedido de desbloqueio recusado")
+                    },
+                ) { Text("Recusar desbloqueio") }
+            }
+            Button(
+                onClick = {
+                    activity.startActivity(
+                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Abrir definições de acessibilidade") }
             OutlinedTextField(
                 commandText,
                 { commandText = it },

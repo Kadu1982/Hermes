@@ -9,6 +9,17 @@
             android:name="com.hermes.feature.commands.VoiceWakeForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <service
+            android:name="com.hermes.feature.commands.JarvisAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/jarvis_accessibility_service" />
+        </service>
         <activity
             android:name="com.hermes.feature.commands.PhotoCaptureActivity"
             android:exported="false"

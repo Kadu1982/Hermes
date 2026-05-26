@@ -111,4 +111,40 @@ def format_command_result_message(
             return f"Navegação aberta em {device_name} para {destination}: {detail.get('opened_url')}"
         return f"Navegação aberta em {device_name} para {destination}"
 
+    if command_type == "open_app":
+        detail = result or {}
+        app_name = detail.get("app_name") or (result or {}).get("label") or "app"
+        if detail.get("opened"):
+            return f"App aberto em {device_name}: {app_name}"
+        return f"App em {device_name}: {app_name} — concluído"
+
+    if command_type == "android_system_action":
+        detail = result or {}
+        action = detail.get("action") or "ação de sistema"
+        if detail.get("performed"):
+            return f"Ação de sistema em {device_name}: {action}"
+        return f"Ação de sistema em {device_name}: {action} — concluída"
+
+    if command_type == "android_deep_link":
+        detail = result or {}
+        target = detail.get("target") or "destino"
+        if detail.get("opened"):
+            return f"Atalho Android aberto em {device_name}: {target}"
+        return f"Atalho Android em {device_name}: {target} — concluído"
+
+    if command_type == "request_unlock":
+        detail = result or {}
+        if detail.get("dismissed"):
+            return f"Desbloqueio solicitado em {device_name}: confirmado pelo sistema."
+        if detail.get("approved"):
+            return f"Desbloqueio solicitado em {device_name}: aprovado, aguardando sistema."
+        return f"Desbloqueio solicitado em {device_name}: concluído"
+
+    if command_type == "android_ui_action":
+        detail = result or {}
+        flow = detail.get("flow") or "ui_action"
+        if detail.get("performed"):
+            return f"Ação UI em {device_name}: {flow}"
+        return f"Ação UI em {device_name}: {flow} — concluída"
+
     return f"Comando {command_type} em {device_name}: concluído — {result or 'sem payload'}"

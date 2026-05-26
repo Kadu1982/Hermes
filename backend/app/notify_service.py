@@ -46,6 +46,8 @@ def notify_command_finished(db: Session, cmd: Command, device: Device) -> None:
     body = f"{device.name}: {cmd.type} → {cmd.status}"
     if cmd.source_text:
         body = f"{cmd.source_text[:120]} — {cmd.status}"
+    if cmd.result:
+        body = f"{body} | result={cmd.result}"
 
     # MVP: log + store in result metadata for app poll; push/email in later phases
     logger.info("notify channel=%s title=%s body=%s", channel, title, body)

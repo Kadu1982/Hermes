@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Jarvis</string>
+    <string name="jarvis_accessibility_service_name">Jarvis Accessibility</string>
+    <string name="jarvis_accessibility_service_description">Permite ao Jarvis executar ações de sistema e automações permitidas no telefone.</string>
+    <string name="jarvis_unlock_request_title">Pedido de desbloqueio</string>
+    <string name="jarvis_unlock_request_body">O Hermes solicitou um desbloqueio legítimo do sistema para este comando.</string>
+    <string name="jarvis_open_accessibility_settings">Abrir definições de acessibilidade</string>
 </resources>
