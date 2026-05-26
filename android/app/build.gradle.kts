@@ -13,8 +13,8 @@ android {
         applicationId = "com.hermes.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2-mvp"
+        versionCode = 4
+        versionName = "1.3-device-actions"
         buildConfigField("String", "API_BASE_URL", "\"http://72.60.55.213:18080\"")
         val picovoiceAccessKey = providers.gradleProperty("picovoiceAccessKey").orNull.orEmpty()
         buildConfigField(
