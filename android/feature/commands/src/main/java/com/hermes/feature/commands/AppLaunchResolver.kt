@@ -13,9 +13,7 @@ class AppLaunchResolver {
         val label = appName?.trim().orEmpty().ifBlank { null } ?: trimmedPackage ?: return null
         val normalized = label.lowercase()
 
-        val known = KNOWN_APPS.firstOrNull { (aliases, _) ->
-            aliases.any { alias -> normalized == alias || normalized.contains(alias) }
-        }?.value
+        val known = findKnownApp(normalized)
 
         return when {
             trimmedPackage != null && label.isNotBlank() -> AppLaunchTarget(label, trimmedPackage)
@@ -45,5 +43,16 @@ class AppLaunchResolver {
             listOf("maps", "google maps") to ("Google Maps" to "com.google.android.apps.maps"),
             listOf("phone", "dialer", "telefone") to ("Phone" to "com.google.android.dialer"),
         )
+
+        private fun findKnownApp(normalized: String): Pair<String, String>? {
+            for ((aliases, target) in KNOWN_APPS) {
+                for (alias in aliases) {
+                    if (normalized == alias || normalized.contains(alias)) {
+                        return target
+                    }
+                }
+            }
+            return null
+        }
     }
 }
