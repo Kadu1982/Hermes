@@ -11,6 +11,10 @@ import com.hermes.core.network.HermesApi
 import com.hermes.core.network.toJsonRequestBody
 import com.hermes.feature.inventory.InventoryCollector
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class CommandDispatcher(
     private val context: Context,
@@ -22,6 +26,7 @@ class CommandDispatcher(
     private val speaker = DeviceSpeaker(context)
     private val appLaunchResolver = AppLaunchResolver()
     private val systemActionRunner = SystemActionRunner()
+    private val asyncScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     suspend fun pollOnce(): Boolean {
         val res = api.nextCommand()
@@ -156,23 +161,25 @@ class CommandDispatcher(
                 }
                 "request_unlock" -> {
                     CommandBridge.requestUnlockUi(cmd.id)
-                    val result = try {
-                        CommandBridge.awaitUnlock(cmd.id)
-                    } catch (e: Exception) {
-                        complete(
-                            cmd.id,
-                            "failed",
-                            mapOf("approved" to false, "dismissed" to false, "error" to (e.message ?: "unlock_wait_failed")),
-                            e.message,
-                        )
-                        return
-                    }
-                    val approved = result["approved"] as? Boolean ?: false
-                    val dismissed = result["dismissed"] as? Boolean ?: false
-                    if (approved && dismissed) {
-                        complete(cmd.id, "done", result)
-                    } else {
-                        complete(cmd.id, "failed", result, result["error"]?.toString())
+                    asyncScope.launch {
+                        val result = try {
+                            CommandBridge.awaitUnlock(cmd.id)
+                        } catch (e: Exception) {
+                            val failed = mapOf(
+                                "approved" to false,
+                                "dismissed" to false,
+                                "error" to (e.message ?: "unlock_wait_failed"),
+                            )
+                            complete(cmd.id, "failed", failed, e.message)
+                            return@launch
+                        }
+                        val approved = result["approved"] as? Boolean ?: false
+                        val dismissed = result["dismissed"] as? Boolean ?: false
+                        if (approved && dismissed) {
+                            complete(cmd.id, "done", result)
+                        } else {
+                            complete(cmd.id, "failed", result, result["error"]?.toString())
+                        }
                     }
                 }
                 "android_ui_action" -> {
