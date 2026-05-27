@@ -9,6 +9,7 @@ import kotlinx.coroutines.withTimeout
  * Coordinates long-running upload commands between the foreground service and UI (SAF).
  */
 object CommandBridge {
+    private const val DEFAULT_UNLOCK_TIMEOUT_MS = 60_000L
     val pendingUploadCommandId = AtomicReference<String?>(null)
     val pendingUnlockCommandId = AtomicReference<String?>(null)
     private val pendingUnlock = ConcurrentHashMap<String, CompletableDeferred<Map<String, Any?>>>()
@@ -26,7 +27,7 @@ object CommandBridge {
         return pendingUnlock.computeIfAbsent(commandId) { CompletableDeferred() }
     }
 
-    suspend fun awaitUnlock(commandId: String, timeoutMs: Long = 180_000): Map<String, Any?> {
+    suspend fun awaitUnlock(commandId: String, timeoutMs: Long = DEFAULT_UNLOCK_TIMEOUT_MS): Map<String, Any?> {
         return try {
             withTimeout(timeoutMs) { requestUnlockUi(commandId).await() }
         } finally {
