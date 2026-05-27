@@ -41,6 +41,9 @@ _DEEP_LINK_SETTINGS = re.compile(r"\b(defini[cç][oõ]es|configura[cç][oõ]es|s
 _DEEP_LINK_PHONE = re.compile(r"\b(telefone|phone|chamada|ligar|discador|dialer)\b", re.I)
 _APP_ALIASES = {
     "whatsapp": ("WhatsApp", "com.whatsapp"),
+    "youtube": ("YouTube", "com.google.android.youtube"),
+    "yt": ("YouTube", "com.google.android.youtube"),
+    "you tube": ("YouTube", "com.google.android.youtube"),
     "google maps": ("Google Maps", "com.google.android.apps.maps"),
     "maps": ("Google Maps", "com.google.android.apps.maps"),
     "chrome": ("Chrome", "com.android.chrome"),
@@ -63,7 +66,12 @@ def _strip_jarvis_prefix(text: str) -> str:
 
 def _normalize_android_phrase(text: str) -> str:
     text = _strip_jarvis_prefix(text)
-    text = re.sub(r"\b(no|na|do|da|meu|minha|o|a|app|aplicativo|aplica[cç][aã]o|telefone|celular|telem[oó]vel|android|s25|galaxy)\b", " ", text, flags=re.I)
+    text = re.sub(
+        r"\b(no|na|do|da|meu|minha|o|a|app|aplicativo|aplica[cç][aã]o|telefone|celular|telem[oó]vel|android|s25|galaxy|ultra)\b",
+        " ",
+        text,
+        flags=re.I,
+    )
     text = re.sub(r"\s+", " ", text)
     return text.strip(" ,.:;-")
 

@@ -343,6 +343,16 @@ def test_natural_command_routes_android_actions(client: TestClient, admin_user):
     assert open_app.json()["command"]["payload"]["app_name"] == "WhatsApp"
     assert open_app.json()["command"]["payload"]["package_name"] == "com.whatsapp"
 
+    youtube = client.post(
+        "/api/v1/commands/natural",
+        json={"text": "abre YouTube no S25 Ultra"},
+        headers=headers,
+    )
+    assert youtube.status_code == 201
+    assert youtube.json()["parsed_type"] == "open_app"
+    assert youtube.json()["command"]["payload"]["app_name"] == "YouTube"
+    assert youtube.json()["command"]["payload"]["package_name"] == "com.google.android.youtube"
+
     home = client.post(
         "/api/v1/commands/natural",
         json={"text": "volta para home no S25"},

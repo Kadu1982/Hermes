@@ -35,6 +35,7 @@ class AppLaunchResolver {
     companion object {
         private val KNOWN_APPS: Map<List<String>, Pair<String, String>> = linkedMapOf(
             listOf("whatsapp", "wa") to ("WhatsApp" to "com.whatsapp"),
+            listOf("youtube", "yt", "you tube") to ("YouTube" to "com.google.android.youtube"),
             listOf("chrome", "google chrome", "browser") to ("Chrome" to "com.android.chrome"),
             listOf("gmail", "e-mail", "email") to ("Gmail" to "com.google.android.gm"),
             listOf("telegram") to ("Telegram" to "org.telegram.messenger"),

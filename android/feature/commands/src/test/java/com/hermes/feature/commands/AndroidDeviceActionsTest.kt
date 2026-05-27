@@ -19,6 +19,15 @@ class AndroidDeviceActionsTest {
     }
 
     @Test
+    fun app_launch_resolver_maps_youtube_aliases() {
+        val resolver = AppLaunchResolver()
+        val target = resolver.resolve("YouTube Ultra", null)
+        assertNotNull(target)
+        assertEquals("YouTube", target?.appName)
+        assertEquals("com.google.android.youtube", target?.packageName)
+    }
+
+    @Test
     fun app_launch_resolver_maps_deep_links() {
         val resolver = AppLaunchResolver()
         val camera = resolver.resolveDeepLink("camera")
