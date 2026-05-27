@@ -1,8 +1,13 @@
 package com.hermes.app
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Activity
 import android.content.Intent
+import android.content.Context
 import android.speech.RecognizerIntent
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationCompat
 import com.hermes.app.voice.HermesVoice
 import com.hermes.core.network.BrainGoogleBody
 import com.hermes.core.network.AdminLoginBody
@@ -75,6 +81,7 @@ fun CommanderScreen(
     var googleData by remember { mutableStateOf<Any?>(null) }
     var googleNeedsConfirmation by remember { mutableStateOf(false) }
     var pendingUnlock by remember { mutableStateOf(CommandBridge.pendingUnlockCommandId.get()) }
+    var lastAnnouncedUnlock by remember { mutableStateOf<String?>(null) }
     val notifyOptions = listOf("voice" to "Voz Jarvis", "push" to "Notificação", "silent" to "Silencioso")
 
     val speechLauncher = rememberLauncherForActivityResult(
@@ -159,6 +166,23 @@ fun CommanderScreen(
         while (true) {
             pendingUnlock = CommandBridge.pendingUnlockCommandId.get()
             delay(400)
+        }
+    }
+
+    LaunchedEffect(pendingUnlock) {
+        val commandId = pendingUnlock
+        if (commandId.isNullOrBlank()) {
+            lastAnnouncedUnlock = null
+            clearUnlockNotification(activity)
+            return@LaunchedEffect
+        }
+        if (commandId != lastAnnouncedUnlock) {
+            lastAnnouncedUnlock = commandId
+            onStatus("Pedido de desbloqueio ativo")
+            withContext(Dispatchers.IO) {
+                voice.speakBlocking(activity.getString(R.string.jarvis_unlock_request_spoken))
+            }
+            postUnlockNotification(activity, commandId)
         }
     }
 
@@ -483,4 +507,50 @@ fun CommanderScreen(
         }
         Text(statusText)
     }
+}
+
+private const val UNLOCK_NOTIFICATION_CHANNEL_ID = "hermes_unlock"
+private const val UNLOCK_NOTIFICATION_ID = 43_102
+
+private fun postUnlockNotification(activity: Activity, commandId: String) {
+    val nm = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        nm.createNotificationChannel(
+            NotificationChannel(
+                UNLOCK_NOTIFICATION_CHANNEL_ID,
+                activity.getString(R.string.jarvis_unlock_request_title),
+                NotificationManager.IMPORTANCE_HIGH,
+            ),
+        )
+    }
+    val launchIntent = Intent(activity, MainActivity::class.java).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        putExtra("unlock_command_id", commandId)
+    }
+    val contentIntent = PendingIntent.getActivity(
+        activity,
+        UNLOCK_NOTIFICATION_ID,
+        launchIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    val notification = NotificationCompat.Builder(activity, UNLOCK_NOTIFICATION_CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_lock_lock)
+        .setContentTitle(activity.getString(R.string.jarvis_unlock_request_title))
+        .setContentText(activity.getString(R.string.jarvis_unlock_request_body))
+        .setStyle(
+            NotificationCompat.BigTextStyle().bigText(activity.getString(R.string.jarvis_unlock_request_body)),
+        )
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setCategory(NotificationCompat.CATEGORY_STATUS)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        .setOngoing(true)
+        .setAutoCancel(false)
+        .setContentIntent(contentIntent)
+        .build()
+    nm.notify(UNLOCK_NOTIFICATION_ID, notification)
+}
+
+private fun clearUnlockNotification(activity: Activity) {
+    val nm = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    nm.cancel(UNLOCK_NOTIFICATION_ID)
 }
