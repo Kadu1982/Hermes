@@ -27,6 +27,27 @@ _GREETING = re.compile(r"\b(ol[aá]|oi|hello|hi|bom\s+dia|boa\s+noite)\b", re.I)
 _SERVER = re.compile(r"\b(vps|servidor|server)\b", re.I)
 _PHONE = re.compile(r"\b(telefone|phone|celular|galaxy|android|s25|telem[oó]vel)\b", re.I)
 _PC = re.compile(r"\b(pc|computador|windows|casa|pc\s*casa)\b", re.I)
+_READ_LOCAL_FILE = re.compile(
+    r"\b(leia|ler|abre|abrir|mostra|mostrar|read|open|exibe|exibir)\s+(o\s+)?(arquivo|ficheiro|file|documento)\s+",
+    re.I,
+)
+_SEND_FILE_PATH = re.compile(
+    r"\b(em\s+)?(caminho|path|caminho\s+completo|caminho\s+absoluto)\s+",
+    re.I,
+)
+_SCREENSHOT = re.compile(
+    r"\b(print(\s+da\s+tela)?|screenshot|captur[ae]\s+de\s+tela|captur[ae]\s+de\s+ecr[ãa]|"
+    r"captur[ae]\s+tela|foto\s+do\s+ecr[ãa]|foto\s+da\s+tela|print\s?screen)\b",
+    re.I,
+)
+_RESTART_AGENT = re.compile(
+    r"\b(reinicie|reiniciar|restart)\s+(o\s+)?(agente|agent)\b",
+    re.I,
+)
+_RESTART_PC = re.compile(
+    r"\b(reinicie|reiniciar|restart)\s+([oa]\s+)?(pc|computador|windows|m[aá]quina)\b",
+    re.I,
+)
 _DOCKER = re.compile(r"\b(docker|containers?|container)\b", re.I)
 _OPEN_APP = re.compile(r"\b(abre|abrir|open|launch|inicia|iniciar|start)\b", re.I)
 _UNLOCK = re.compile(r"\b(desbloqueia|desbloquear|destrava|destravar|unlock)\b", re.I)
@@ -137,6 +158,18 @@ def _extract_speak_text(text: str) -> str:
     return text.strip()
 
 
+def _extract_filepath(text: str) -> str:
+    text = _READ_LOCAL_FILE.sub("", text, count=1).strip()
+    text = _SEND_FILE_PATH.sub("", text, count=1).strip()
+    # Strip trailing device mentions (e.g., "no PC-Casa", "no computador")
+    text = re.sub(
+        r"\s+(no|no|do|da|meu|minha|em)\s+[\w\-]+(?:\s+[\w\-]+)*\s*$",
+        "", text, flags=re.I,
+    )
+    text = text.strip(" ,.:;-")
+    return text
+
+
 def _extract_navigation_destination(text: str) -> str:
     dest = re.sub(r"^(ei|oi|ok|hey)\s+(jarvis|hermes)[,:\-\s]*", "", text.strip(), flags=re.I)
     patterns = [
@@ -187,6 +220,13 @@ def resolve_device(db: Session, text: str, explicit_device_id: uuid.UUID | None)
         for d in devices:
             if d.platform == "windows":
                 return d
+    if _SCREENSHOT.search(text):
+        for d in devices:
+            if d.platform in ("windows", "linux", "server"):
+                return d
+        for d in devices:
+            if d.platform != "android":
+                return d
     # "diga olá" sem destino → telemóvel Android (quem costuma falar)
     if _SPEAK.search(text) or _GREETING.search(text):
         for d in devices:
@@ -219,11 +259,22 @@ def parse_natural_command(db: Session, text: str, explicit_device_id: uuid.UUID 
         if not destination:
             raise ValueError("Diz para onde queres navegar, por exemplo: 'me leva para casa'.")
         cmd_type, payload = "navigate_to", {"destination": destination, "mode": "driving"}
+    elif _READ_LOCAL_FILE.search(text):
+        filepath = _extract_filepath(text)
+        if not filepath:
+            raise ValueError("Diz o caminho do arquivo, por exemplo: 'leia o arquivo C:\\Users\\meu\\documento.txt no PC-Casa'.")
+        cmd_type, payload = "read_local_file", {"filepath": filepath}
+    elif _SCREENSHOT.search(text):
+        cmd_type, payload = "take_screenshot", None
     elif _PHOTO.search(text):
         payload = {"archive_only": not bool(_SEND_PHOTO.search(text))}
         cmd_type = "take_photo"
     elif _LOCATION.search(text):
         cmd_type, payload = "get_location", {}
+    elif _RESTART_AGENT.search(text):
+        cmd_type, payload = "restart_agent", None
+    elif _RESTART_PC.search(text):
+        cmd_type, payload = "restart_pc", None
     elif _SPEAK.search(text) or (_GREETING.search(text) and not _PING.search(text)):
         cmd_type = "speak"
         payload = {"text": _extract_speak_text(text)}
@@ -247,8 +298,10 @@ def parse_natural_command(db: Session, text: str, explicit_device_id: uuid.UUID 
         raise ValueError(
             "Não entendi o pedido. Exemplos: 'diga olá', 'ping no PC-Casa', "
             "'inventário do VPS', 'fale boa noite no telefone', "
-            "'tira uma foto', 'onde estou', 'me leva para casa', "
-            "'abre WhatsApp no telefone', 'volta para home no telefone', 'desbloqueia o telefone'."
+            "'tira uma foto', 'print da tela no PC', 'onde estou', 'me leva para casa', "
+            "'abre WhatsApp no telefone', 'volta para home no telefone', 'desbloqueia o telefone', "
+            "'leia o arquivo C:\\documento.txt no PC-Casa', "
+            "'reiniciar agente no PC-Casa', 'reiniciar o PC-Casa'."
         )
     return ParsedNaturalCommand(
         device_id=device.id,

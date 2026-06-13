@@ -30,7 +30,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     print("Hermes agent running (Ctrl+C to stop)")
     while True:
         try:
-            run_poll_loop(client)
+            if run_poll_loop(client):
+                print("Restart requested — exiting so the new agent process can take over.")
+                break
         except Exception as exc:
             # Conexão instável (Windows/antivírus) — agente continua tentando.
             print("poll warning:", exc)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -51,6 +52,17 @@ class HermesClient:
             return r.json()
         finally:
             r.close()
+
+    def upload_file(self, command_id: str, filepath: str, mime_type: str | None = None) -> dict[str, Any]:
+        with open(filepath, "rb") as f:
+            r = self.session.post(
+                f"{self.base}/files/upload",
+                data={"command_id": command_id},
+                files={"file": (Path(filepath).name, f, mime_type or "application/octet-stream")},
+                timeout=120,
+            )
+        r.raise_for_status()
+        return r.json()
 
     def complete(self, command_id: str, status: str, result: dict | None, logs: str | None = None) -> None:
         r = self.session.post(

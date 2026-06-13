@@ -85,6 +85,14 @@ def format_command_result_message(
     if command_type == "speak":
         return f"Falado em {device_name}: {(result or {}).get('spoken', 'ok')}"
 
+    if command_type == "take_screenshot":
+        detail = result or {}
+        if detail.get("file_id"):
+            fname = detail.get("filename", "screenshot.png")
+            size = detail.get("size_bytes", 0)
+            return f"Screenshot capturado em {device_name}: {fname} ({size} bytes)"
+        return f"Screenshot capturado em {device_name}: {detail or 'concluído'}"
+
     if command_type == "take_photo":
         detail = result or {}
         if detail.get("archived_path"):
@@ -146,5 +154,27 @@ def format_command_result_message(
         if detail.get("performed"):
             return f"Ação UI em {device_name}: {flow}"
         return f"Ação UI em {device_name}: {flow} — concluída"
+
+    if command_type == "restart_agent":
+        return f"Agente reiniciado em {device_name}: comando executado, agente será reiniciado em instantes."
+
+    if command_type == "restart_pc":
+        return f"PC reiniciado em {device_name}: comando executado, o PC será reiniciado em instantes."
+
+    if command_type == "read_local_file":
+        detail = result or {}
+        fname = detail.get("filename", "arquivo")
+        size = detail.get("size_bytes", 0)
+        if detail.get("content") is not None:
+            preview = detail["content"][:200].replace("\n", " ")
+            if len(detail["content"]) > 200:
+                preview += "..."
+            return (
+                f"Arquivo lido em {device_name}: {fname} ({size} bytes). "
+                f"Conteúdo: \"{preview}\""
+            )
+        if detail.get("file_id"):
+            return f"Arquivo lido em {device_name}: {fname} ({size} bytes, file_id={detail['file_id']})"
+        return f"Arquivo lido em {device_name}: {fname} ({size} bytes)"
 
     return f"Comando {command_type} em {device_name}: concluído — {result or 'sem payload'}"

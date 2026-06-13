@@ -413,6 +413,10 @@ components:
         - android_deep_link
         - request_unlock
         - android_ui_action
+        - take_screenshot
+        - read_local_file
+        - restart_agent
+        - restart_pc
     CommandStatus:
       type: string
       enum: [pending, running, done, failed]
@@ -426,6 +430,9 @@ components:
           type: object
           additionalProperties: true
           nullable: true
+          description: |
+            For read_local_file, use {"filepath": "C:\\path\\to\\file.txt"}.
+            The agent returns content inline (small text) or uploads binary/large files.
     CommandJob:
       type: object
       required: [id, type, payload, status]

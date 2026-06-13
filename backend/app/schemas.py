@@ -246,6 +246,19 @@ class FileMetaResponse(BaseModel):
     command_id: uuid.UUID
 
 
+class FileSearchItem(BaseModel):
+    id: uuid.UUID
+    filename: str
+    size_bytes: int
+    sha256: str
+    command_id: uuid.UUID
+    device_id: uuid.UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class AuditLogEntry(BaseModel):
     id: uuid.UUID
     actor_type: str

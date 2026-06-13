@@ -1,7 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
+from uuid import UUID
 
 from app.command_wait import format_command_result_message
+from app.models import FileRecord
 
 
 def test_health(client: TestClient):
@@ -265,6 +267,52 @@ def test_natural_command_routes_photo_and_location(client: TestClient, admin_use
     assert location.json()["parsed_type"] == "get_location"
 
 
+def test_file_search_lists_device_files(client: TestClient, admin_user, db_session):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "files"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "FileDevice"},
+    )
+    assert pair.status_code == 201
+    dev_id = UUID(pair.json()["device_id"])
+
+    cmd = client.post(f"/api/v1/devices/{dev_id}/commands", json={"type": "ping"}, headers=headers)
+    assert cmd.status_code == 201
+    cid = UUID(cmd.json()["id"])
+
+    rec = FileRecord(
+        device_id=dev_id,
+        command_id=cid,
+        filename="relatorio-final.pdf",
+        storage_path=f"{cid}_relatorio-final.pdf",
+        size_bytes=1234,
+        sha256="a" * 64,
+    )
+    db_session.add(rec)
+    db_session.commit()
+
+    r = client.get("/api/v1/files?query=relatorio", headers={"Authorization": f"Bearer {pair.json()['device_token']}"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["filename"] == "relatorio-final.pdf"
+
+
 def test_natural_command_routes_navigation_to_phone(client: TestClient, admin_user):
     login = client.post(
         "/api/v1/auth/login",
@@ -485,3 +533,501 @@ def test_command_wait_formats_photo_and_location_messages():
         result={"app_name": "WhatsApp", "opened": True},
     )
     assert "App aberto" in open_app
+
+
+def test_natural_command_routes_screenshot(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc_pc = client.post("/api/v1/pairing/codes", json={"label": "screenshot_pc"}, headers=headers)
+    assert pc_pc.status_code == 201
+    pc_casa = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc_pc.json()["code"], "device_name": "PC-Casa", "platform": "windows"},
+    )
+    assert pc_casa.status_code == 201
+
+    for text, expected_type in [
+        ("print da tela no PC-Casa", "take_screenshot"),
+        ("Ei Jarvis, captura de tela no PC-Casa", "take_screenshot"),
+        ("screenshot no PC", "take_screenshot"),
+        ("captura de ecrã no PC-Casa", "take_screenshot"),
+    ]:
+        r = client.post("/api/v1/commands/natural", json={"text": text}, headers=headers)
+        assert r.status_code == 201, f"failed for text={text!r}: {r.json()}"
+        assert r.json()["parsed_type"] == expected_type, f"wrong type for text={text!r}"
+        assert r.json()["parsed_device_name"] == "PC-Casa", f"wrong device for text={text!r}"
+        assert r.json()["command"]["payload"] is None, f"expected null payload for text={text!r}"
+
+    for text in ("tira uma foto no PC-Casa", "abre a câmera no PC-Casa"):
+        r = client.post("/api/v1/commands/natural", json={"text": text}, headers=headers)
+        assert r.status_code == 201, f"failed for text={text!r}"
+        assert r.json()["parsed_type"] != "take_screenshot", f"text={text!r} should NOT be screenshot"
+
+
+def test_screenshot_payload_validation(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "val_pc"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "TestPC", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+    device_id = pair.json()["device_id"]
+
+    invalid = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "take_screenshot", "payload": {"format": "jpg"}},
+        headers=headers,
+    )
+    assert invalid.status_code == 400
+    assert "does not accept payload" in invalid.json()["detail"]
+
+    valid = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "take_screenshot", "payload": None},
+        headers=headers,
+    )
+    assert valid.status_code == 201
+    assert valid.json()["type"] == "take_screenshot"
+    assert valid.json()["payload"] is None
+
+
+def test_read_local_file_payload_validation(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "rl_pc"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "PC-Casa", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+    device_id = pair.json()["device_id"]
+
+    invalid_no_path = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "read_local_file", "payload": {}},
+        headers=headers,
+    )
+    assert invalid_no_path.status_code == 400
+    assert "filepath" in invalid_no_path.json()["detail"]
+
+    invalid_extra = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "read_local_file", "payload": {"filepath": "C:\\test.txt", "extra": "bad"}},
+        headers=headers,
+    )
+    assert invalid_extra.status_code == 400
+    assert "only accepts" in invalid_extra.json()["detail"]
+
+    valid = client.post(
+        f"/api/v1/devices/{device_id}/commands",
+        json={"type": "read_local_file", "payload": {"filepath": "C:\\Users\\me\\doc.txt"}},
+        headers=headers,
+    )
+    assert valid.status_code == 201
+    assert valid.json()["type"] == "read_local_file"
+    assert valid.json()["payload"]["filepath"] == "C:\\Users\\me\\doc.txt"
+
+
+def test_natural_command_routes_read_local_file(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "rl_pc2"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "PC-Casa", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+    device_id = pair.json()["device_id"]
+
+    for text, expected_path in [
+        ("leia o arquivo C:\\Users\\meu\\documento.txt no PC-Casa", "C:\\Users\\meu\\documento.txt"),
+        ("ler arquivo /home/user/file.txt no PC", "/home/user/file.txt"),
+        ("mostra o arquivo /etc/config.conf no PC-Casa", "/etc/config.conf"),
+    ]:
+        r = client.post(
+            "/api/v1/commands/natural",
+            json={"text": text, "device_id": device_id},
+            headers=headers,
+        )
+        assert r.status_code == 201, f"failed for text={text!r}: {r.json()}"
+        assert r.json()["parsed_type"] == "read_local_file", f"wrong type for text={text!r}"
+        assert r.json()["command"]["payload"]["filepath"] == expected_path, f"wrong path for text={text!r}"
+
+
+def test_command_wait_formats_read_local_file():
+    inline_read = format_command_result_message(
+        device_name="PC-Casa",
+        command_type="read_local_file",
+        status="done",
+        result={"filename": "notes.txt", "content": "Hello world line 1\nline 2\n", "size_bytes": 28, "content_type": "text"},
+    )
+    assert "Arquivo lido em PC-Casa" in inline_read
+    assert "notes.txt" in inline_read
+    assert "Hello world line 1" in inline_read
+
+    file_id_result = format_command_result_message(
+        device_name="PC-Casa",
+        command_type="read_local_file",
+        status="done",
+        result={"file_id": "abc-456", "filename": "photo.jpg", "size_bytes": 1024000},
+    )
+    assert "Arquivo lido em PC-Casa" in file_id_result
+    assert "photo.jpg" in file_id_result
+    assert "abc-456" in file_id_result
+
+    failed = format_command_result_message(
+        device_name="PC-Casa",
+        command_type="read_local_file",
+        status="failed",
+        result={"error": "File not found"},
+    )
+    assert "FALHOU" in failed
+
+
+def test_restart_agent_command_flow(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "restart_pc"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "PC-Casa", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+    dev_id = pair.json()["device_id"]
+    dheaders = {"Authorization": f"Bearer {pair.json()['device_token']}"}
+
+    cmd = client.post(
+        f"/api/v1/devices/{dev_id}/commands",
+        json={"type": "restart_agent", "payload": None},
+        headers=headers,
+    )
+    assert cmd.status_code == 201
+    assert cmd.json()["type"] == "restart_agent"
+    assert cmd.json()["payload"] is None
+    cid = cmd.json()["id"]
+
+    nxt = client.get("/api/v1/devices/me/commands/next", headers=dheaders)
+    assert nxt.status_code == 200
+    assert nxt.json()["type"] == "restart_agent"
+
+    done = client.post(
+        f"/api/v1/devices/me/commands/{cid}/complete",
+        json={"status": "done", "result": {"restarting": True}},
+        headers=dheaders,
+    )
+    assert done.status_code == 204
+
+
+def test_restart_agent_payload_validation(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "restart_val"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "TestPC", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+    dev_id = pair.json()["device_id"]
+
+    invalid = client.post(
+        f"/api/v1/devices/{dev_id}/commands",
+        json={"type": "restart_agent", "payload": {"reason": "manutencao"}},
+        headers=headers,
+    )
+    assert invalid.status_code == 400
+    assert "Payload must be empty" in invalid.json()["detail"]
+
+    valid = client.post(
+        f"/api/v1/devices/{dev_id}/commands",
+        json={"type": "restart_agent", "payload": None},
+        headers=headers,
+    )
+    assert valid.status_code == 201
+    assert valid.json()["type"] == "restart_agent"
+
+
+def test_restart_pc_command_flow(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "reboot_pc"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "PC-Casa", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+    dev_id = pair.json()["device_id"]
+    dheaders = {"Authorization": f"Bearer {pair.json()['device_token']}"}
+
+    cmd = client.post(
+        f"/api/v1/devices/{dev_id}/commands",
+        json={"type": "restart_pc", "payload": None},
+        headers=headers,
+    )
+    assert cmd.status_code == 201
+    assert cmd.json()["type"] == "restart_pc"
+    assert cmd.json()["payload"] is None
+    cid = cmd.json()["id"]
+
+    nxt = client.get("/api/v1/devices/me/commands/next", headers=dheaders)
+    assert nxt.status_code == 200
+    assert nxt.json()["type"] == "restart_pc"
+
+    done = client.post(
+        f"/api/v1/devices/me/commands/{cid}/complete",
+        json={"status": "done", "result": {"rebooting": True}},
+        headers=dheaders,
+    )
+    assert done.status_code == 204
+
+
+def test_restart_pc_payload_validation(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "reboot_val"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "TestPC", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+    dev_id = pair.json()["device_id"]
+
+    invalid = client.post(
+        f"/api/v1/devices/{dev_id}/commands",
+        json={"type": "restart_pc", "payload": {"reason": "manutencao"}},
+        headers=headers,
+    )
+    assert invalid.status_code == 400
+    assert "Payload must be empty" in invalid.json()["detail"]
+
+    valid = client.post(
+        f"/api/v1/devices/{dev_id}/commands",
+        json={"type": "restart_pc", "payload": None},
+        headers=headers,
+    )
+    assert valid.status_code == 201
+    assert valid.json()["type"] == "restart_pc"
+
+
+def test_natural_command_routes_restart_pc(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "reboot_nl"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "PC-Casa", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+
+    for text, expected_type in [
+        ("reiniciar o PC no PC-Casa", "restart_pc"),
+        ("Ei Jarvis, reinicie o PC-Casa", "restart_pc"),
+        ("restart PC no PC-Casa", "restart_pc"),
+        ("reiniciar o computador no PC-Casa", "restart_pc"),
+        ("reiniciar a máquina no PC-Casa", "restart_pc"),
+    ]:
+        r = client.post("/api/v1/commands/natural", json={"text": text}, headers=headers)
+        assert r.status_code == 201, f"failed for text={text!r}: {r.json()}"
+        assert r.json()["parsed_type"] == expected_type, f"wrong type for text={text!r}"
+        assert r.json()["parsed_device_name"] == "PC-Casa", f"wrong device for text={text!r}"
+        assert r.json()["command"]["payload"] is None, f"expected null payload for text={text!r}"
+
+
+def test_command_wait_formats_restart_pc():
+    msg = format_command_result_message(
+        device_name="PC-Casa",
+        command_type="restart_pc",
+        status="done",
+        result={"rebooting": True},
+    )
+    assert "PC reiniciado em PC-Casa" in msg
+
+
+def test_natural_command_routes_restart_agent(client: TestClient, admin_user):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert login.status_code == 200
+    tok = login.json()["access_token"]
+    tfa = client.post(
+        "/api/v1/auth/2fa/verify",
+        json={"access_token": tok, "code": admin_user["code"]},
+    )
+    assert tfa.status_code == 200
+    admin_tok = tfa.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+
+    pc = client.post("/api/v1/pairing/codes", json={"label": "restart_nl"}, headers=headers)
+    assert pc.status_code == 201
+    pair = client.post(
+        "/api/v1/devices/pair",
+        json={"pairing_code": pc.json()["code"], "device_name": "PC-Casa", "platform": "windows"},
+    )
+    assert pair.status_code == 201
+
+    for text, expected_type in [
+        ("reiniciar agente no PC-Casa", "restart_agent"),
+        ("Ei Jarvis, reinicie o agente no PC-Casa", "restart_agent"),
+        ("restart agent no PC", "restart_agent"),
+    ]:
+        r = client.post("/api/v1/commands/natural", json={"text": text}, headers=headers)
+        assert r.status_code == 201, f"failed for text={text!r}: {r.json()}"
+        assert r.json()["parsed_type"] == expected_type, f"wrong type for text={text!r}"
+        assert r.json()["parsed_device_name"] == "PC-Casa", f"wrong device for text={text!r}"
+        assert r.json()["command"]["payload"] is None, f"expected null payload for text={text!r}"
+
+
+def test_command_wait_formats_restart_agent():
+    msg = format_command_result_message(
+        device_name="PC-Casa",
+        command_type="restart_agent",
+        status="done",
+        result={"restarting": True},
+    )
+    assert "Agente reiniciado em PC-Casa" in msg
+
+
+def test_command_wait_formats_screenshot_message():
+    msg = format_command_result_message(
+        device_name="PC-Casa",
+        command_type="take_screenshot",
+        status="done",
+        result={"file_id": "abc-123", "filename": "screenshot_2026_05_27.png", "size_bytes": 245760, "sha256": "deadbeef"},
+    )
+    assert "Screenshot capturado em PC-Casa" in msg
+    assert "screenshot_2026_05_27.png" in msg
+    assert "245760" in msg
+
+    no_file = format_command_result_message(
+        device_name="PC-Casa",
+        command_type="take_screenshot",
+        status="done",
+        result={"some_other": "data"},
+    )
+    assert "Screenshot capturado em PC-Casa" in no_file
+
+    failed = format_command_result_message(
+        device_name="PC-Casa",
+        command_type="take_screenshot",
+        status="failed",
+        result={"error": "no screen available"},
+    )
+    assert "FALHOU" in failed

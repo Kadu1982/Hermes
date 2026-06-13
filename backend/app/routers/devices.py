@@ -26,7 +26,7 @@ router = APIRouter(prefix="/devices", tags=["devices"])
 
 
 @router.post("/pair", response_model=DevicePairResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("20/minute")
+@limiter.limit("100/minute")
 def pair_device(body: DevicePairRequest, request: Request, db: Session = Depends(get_db)) -> DevicePairResponse:
     now = datetime.now(tz=UTC)
     candidates = (

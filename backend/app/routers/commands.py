@@ -28,7 +28,7 @@ router = APIRouter(tags=["commands"])
 
 def _validate_payload(cmd_type: str, payload: dict | None) -> None:
     payload = payload or {}
-    if cmd_type in ("ping", "revoke_local", "noop", "get_location") and payload:
+    if cmd_type in ("ping", "revoke_local", "noop", "get_location", "restart_agent", "restart_pc") and payload:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Payload must be empty for this command type")
     if cmd_type == "speak":
         if not payload or not str(payload.get("text", "")).strip():
@@ -70,12 +70,21 @@ def _validate_payload(cmd_type: str, payload: dict | None) -> None:
     if cmd_type == "request_unlock":
         if payload:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "request_unlock does not accept payload")
+    if cmd_type == "take_screenshot":
+        if payload:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "take_screenshot does not accept payload")
     if cmd_type == "android_ui_action":
         flow = str(payload.get("flow", "")).strip()
         if not flow:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "android_ui_action requires flow")
         if set(payload.keys()) - {"flow", "package_name", "action", "target", "text"}:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "android_ui_action contains unsupported fields")
+    if cmd_type == "read_local_file":
+        filepath = str(payload.get("filepath", "")).strip()
+        if not filepath:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "read_local_file requires filepath")
+        if set(payload.keys()) - {"filepath"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "read_local_file only accepts filepath")
 
 
 @router.post("/devices/{device_id}/commands", response_model=CommandJobAdmin, status_code=status.HTTP_201_CREATED)

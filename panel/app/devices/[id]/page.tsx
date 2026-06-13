@@ -31,7 +31,7 @@ type CommandItem = {
   source_text: string | null;
 };
 
-const COMMAND_TYPES = ['ping', 'get_inventory', 'request_upload', 'request_download', 'revoke_local', 'noop', 'speak', 'server_docker_ps'];
+const COMMAND_TYPES = ['ping', 'get_inventory', 'request_upload', 'request_download', 'revoke_local', 'noop', 'speak', 'server_docker_ps', 'read_local_file', 'restart_agent', 'restart_pc'];
 
 export default function DeviceDetail() {
   const params = useParams();

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.audit_service import safe_metadata, write_audit
@@ -13,6 +14,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.deps import get_current_device
 from app.models import Command, Device, FileRecord
+from app.schemas import FileMetaResponse, FileSearchItem
 
 router = APIRouter(prefix="/files", tags=["files"])
 settings = get_settings()
@@ -75,6 +77,47 @@ async def upload_file(
         "size_bytes": rec.size_bytes,
         "sha256": rec.sha256,
         "command_id": rec.command_id,
+    }
+
+
+@router.get("", response_model=dict)
+def list_files(
+    db: Session = Depends(get_db),
+    device: Device = Depends(get_current_device),
+    limit: int = 50,
+    offset: int = 0,
+    query: str | None = None,
+    command_id: uuid.UUID | None = None,
+) -> dict:
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
+    stmt = select(FileRecord).where(FileRecord.device_id == device.id)
+    if command_id is not None:
+        stmt = stmt.where(FileRecord.command_id == command_id)
+    if query:
+        stmt = stmt.where(FileRecord.filename.ilike(f"%{query.strip()}%"))
+    stmt = stmt.order_by(FileRecord.created_at.desc()).offset(offset).limit(limit)
+    items = db.scalars(stmt).all()
+    total_stmt = select(func.count()).select_from(FileRecord).where(FileRecord.device_id == device.id)
+    if command_id is not None:
+        total_stmt = total_stmt.where(FileRecord.command_id == command_id)
+    if query:
+        total_stmt = total_stmt.where(FileRecord.filename.ilike(f"%{query.strip()}%"))
+    total = db.scalar(total_stmt) or 0
+    return {
+        "items": [
+            FileSearchItem(
+                id=item.id,
+                filename=item.filename,
+                size_bytes=item.size_bytes,
+                sha256=item.sha256,
+                command_id=item.command_id,
+                device_id=item.device_id,
+                created_at=item.created_at,
+            )
+            for item in items
+        ],
+        "total": total,
     }
 
 

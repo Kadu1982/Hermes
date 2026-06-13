@@ -210,5 +210,9 @@ ALLOWED_COMMAND_TYPES = frozenset(
         "android_deep_link",
         "request_unlock",
         "android_ui_action",
+        "take_screenshot",
+        "read_local_file",
+        "restart_agent",
+        "restart_pc",
     }
 )
